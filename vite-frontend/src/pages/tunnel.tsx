@@ -710,63 +710,79 @@ export default function TunnelPage() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            color={selectMode ? "secondary" : "default"}
-            size="sm"
-            variant={selectMode ? "solid" : "flat"}
-            onPress={toggleSelectMode}
-          >
-            {selectMode ? "退出" : "批量"}
-          </Button>
-          <Button color="primary" size="sm" variant="flat" onPress={handleAdd}>
-            新增
-          </Button>
+        <div className="flex min-h-9 min-w-0 max-w-full items-center justify-end gap-2 overflow-x-auto whitespace-nowrap [&>*]:shrink-0">
+          {selectMode ? (
+            <>
+              <span className="text-sm text-default-600 shrink-0">
+                已选择 {selectedIds.size} 项
+              </span>
+              <Button
+                color="primary"
+                size="sm"
+                variant="flat"
+                onPress={selectAll}
+              >
+                全选
+              </Button>
+              <Button
+                color="secondary"
+                size="sm"
+                variant="flat"
+                onPress={deselectAll}
+              >
+                清空
+              </Button>
+              <Button
+                color="danger"
+                isDisabled={selectedIds.size === 0}
+                size="sm"
+                variant="flat"
+                onPress={() => setBatchDeleteModalOpen(true)}
+              >
+                删除
+              </Button>
+              <Button
+                color="primary"
+                isDisabled={selectedIds.size === 0}
+                isLoading={batchLoading}
+                size="sm"
+                variant="flat"
+                onPress={handleBatchRedeploy}
+              >
+                下发
+              </Button>
+              <Button
+                color="secondary"
+                size="sm"
+                variant="solid"
+                onPress={toggleSelectMode}
+              >
+                退出
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                className="border border-sky-200 bg-sky-100 text-sky-700 hover:bg-sky-200 dark:border-sky-500/40 dark:bg-sky-900/30 dark:text-sky-300 dark:hover:bg-sky-900/45"
+                color="default"
+                size="sm"
+                variant="flat"
+                onPress={toggleSelectMode}
+              >
+                批量
+              </Button>
+              <Button
+                color="primary"
+                size="sm"
+                variant="flat"
+                onPress={handleAdd}
+              >
+                新增
+              </Button>
+            </>
+          )}
         </div>
       </div>
-
-      {selectMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-7 left-1/2 z-50 w-[calc(100vw-1rem)] max-w-max -translate-x-1/2 overflow-x-auto rounded-lg border border-divider bg-content1 p-2 shadow-lg">
-          <div className="flex min-w-max items-center gap-2">
-            <span className="text-sm text-default-600 shrink-0">
-              已选择 {selectedIds.size} 项
-            </span>
-            <Button
-              color="primary"
-              size="sm"
-              variant="flat"
-              onPress={selectAll}
-            >
-              全选
-            </Button>
-            <Button
-              color="secondary"
-              size="sm"
-              variant="flat"
-              onPress={deselectAll}
-            >
-              清空
-            </Button>
-            <Button
-              color="danger"
-              size="sm"
-              variant="flat"
-              onPress={() => setBatchDeleteModalOpen(true)}
-            >
-              删除
-            </Button>
-            <Button
-              color="primary"
-              isLoading={batchLoading}
-              size="sm"
-              variant="flat"
-              onPress={handleBatchRedeploy}
-            >
-              下发
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* 隧道卡片网格 */}
       {tunnels.length > 0 ? (
