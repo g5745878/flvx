@@ -38,6 +38,7 @@ func (r *Repository) ListActiveForwardsByUser(userID int64) ([]model.ForwardReco
 			RemoteAddr: f.RemoteAddr,
 			Strategy:   f.Strategy,
 			Status:     f.Status,
+			SpeedID:    f.SpeedID,
 		})
 	}
 	for i := range rows {
@@ -68,6 +69,7 @@ func (r *Repository) ListActiveForwardsByUserTunnel(userID, tunnelID int64) ([]m
 			RemoteAddr: f.RemoteAddr,
 			Strategy:   f.Strategy,
 			Status:     f.Status,
+			SpeedID:    f.SpeedID,
 		})
 	}
 	for i := range rows {
@@ -99,6 +101,7 @@ func (r *Repository) GetForwardRecord(forwardID int64) (*model.ForwardRecord, er
 		RemoteAddr: f.RemoteAddr,
 		Strategy:   f.Strategy,
 		Status:     f.Status,
+		SpeedID:    f.SpeedID,
 	}
 	if strings.TrimSpace(fr.Strategy) == "" {
 		fr.Strategy = "fifo"
@@ -168,4 +171,16 @@ func (r *Repository) SpeedLimitExists(id int64) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func (r *Repository) GetSpeedLimitSpeed(id int64) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, errors.New("repository not initialized")
+	}
+	var sl model.SpeedLimit
+	err := r.db.Select("speed").Where("id = ?", id).First(&sl).Error
+	if err != nil {
+		return 0, err
+	}
+	return sl.Speed, nil
 }

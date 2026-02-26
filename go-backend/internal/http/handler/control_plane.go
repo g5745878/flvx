@@ -152,11 +152,32 @@ func (h *Handler) syncForwardServices(forward *forwardRecord, method string, all
 		return errors.New("转发入口端口不存在")
 	}
 
-	userTunnelID, limiterID, speed, err := h.resolveUserTunnelAndLimiter(forward.UserID, forward.TunnelID)
-	if err != nil {
-		return err
+	// Determine limiter from forward's SpeedID first, fallback to UserTunnel's limiter
+	var limiterID *int64
+	var speed *int
+
+	if forward.SpeedID.Valid && forward.SpeedID.Int64 > 0 {
+		// Forward has its own speed limit
+		speedVal, err := h.repo.GetSpeedLimitSpeed(forward.SpeedID.Int64)
+		if err == nil && speedVal > 0 {
+			limiterID = &forward.SpeedID.Int64
+			speed = &speedVal
+		}
 	}
-	serviceBase := buildForwardServiceBase(forward.ID, forward.UserID, userTunnelID)
+
+	if limiterID == nil {
+		// Fall back to UserTunnel speed limit
+		var utLimiterID *int64
+		var utSpeed *int
+		_, utLimiterID, utSpeed, err = h.resolveUserTunnelAndLimiter(forward.UserID, forward.TunnelID)
+		if err != nil {
+			return err
+		}
+		limiterID = utLimiterID
+		speed = utSpeed
+	}
+
+	serviceBase := buildForwardServiceBase(forward.ID, forward.UserID, 0)
 	tunnelTLSProtocol, err := h.isTunnelSelectedTLSProtocol(forward.TunnelID)
 	if err != nil {
 		return err
@@ -164,7 +185,9 @@ func (h *Handler) syncForwardServices(forward *forwardRecord, method string, all
 
 	for _, fp := range ports {
 		if limiterID != nil && speed != nil {
-			h.ensureLimiterOnNode(fp.NodeID, *limiterID, *speed)
+			if err := h.ensureLimiterOnNode(fp.NodeID, *limiterID, *speed); err != nil {
+				return err
+			}
 		}
 
 		node, err := h.getNodeRecord(fp.NodeID)
@@ -1030,12 +1053,16 @@ func (h *Handler) sendDeleteLimiterConfig(limiterID int64, tunnelID int64) error
 	return nil
 }
 
-func (h *Handler) ensureLimiterOnNode(nodeID int64, limiterID int64, speed int) {
+func (h *Handler) ensureLimiterOnNode(nodeID int64, limiterID int64, speed int) error {
 	rate := float64(speed) / 8.0
 	limitStr := fmt.Sprintf("$ %.1fMB %.1fMB", rate, rate)
 	payload := map[string]interface{}{
 		"name":   strconv.FormatInt(limiterID, 10),
 		"limits": []string{limitStr},
 	}
-	_, _ = h.sendNodeCommand(nodeID, "AddLimiters", payload, false, false)
+	if _, err := h.sendNodeCommand(nodeID, "AddLimiters", payload, false, false); err != nil {
+		return fmt.Errorf("限速规则下发失败: %w", err)
+	}
+
+	return nil
 }

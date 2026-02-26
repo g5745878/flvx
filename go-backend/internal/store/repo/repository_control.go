@@ -46,6 +46,7 @@ func (r *Repository) ListForwardsByTunnel(tunnelID int64) ([]model.ForwardRecord
 			RemoteAddr: f.RemoteAddr,
 			Strategy:   f.Strategy,
 			Status:     f.Status,
+			SpeedID:    f.SpeedID,
 		})
 	}
 	for i := range rows {

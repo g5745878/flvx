@@ -656,7 +656,7 @@ func (r *Repository) ListUsers() ([]map[string]interface{}, error) {
 		return nil, errors.New("repository not initialized")
 	}
 	var users []model.User
-	if err := r.db.Where("role_id != ?", 0).Order("id ASC").Find(&users).Error; err != nil {
+	if err := r.db.Where("role_id != ?", 0).Order("id DESC").Find(&users).Error; err != nil {
 		return nil, err
 	}
 	items := make([]map[string]interface{}, 0, len(users))
@@ -678,17 +678,23 @@ func (r *Repository) ListSpeedLimits() ([]map[string]interface{}, error) {
 		return nil, errors.New("repository not initialized")
 	}
 	var limits []model.SpeedLimit
-	if err := r.db.Order("id ASC").Find(&limits).Error; err != nil {
+	if err := r.db.Order("id DESC").Find(&limits).Error; err != nil {
 		return nil, err
 	}
 	items := make([]map[string]interface{}, 0, len(limits))
 	for _, sl := range limits {
-		items = append(items, map[string]interface{}{
+		item := map[string]interface{}{
 			"id": sl.ID, "name": sl.Name, "speed": sl.Speed,
-			"tunnelId": sl.TunnelID, "tunnelName": sl.TunnelName,
 			"status": sl.Status, "createdTime": sl.CreatedTime,
 			"updatedTime": nullableInt64(sl.UpdatedTime),
-		})
+		}
+		if sl.TunnelID.Valid {
+			item["tunnelId"] = sl.TunnelID.Int64
+		}
+		if sl.TunnelName.Valid {
+			item["tunnelName"] = sl.TunnelName.String
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -712,11 +718,12 @@ func (r *Repository) ListForwards() ([]map[string]interface{}, error) {
 		CreatedTime int64
 		Status      int
 		Inx         int
+		SpeedID     sql.NullInt64
 	}
 
 	var rows []fwdRow
 	err := r.db.Model(&model.Forward{}).
-		Select("forward.id, forward.user_id, forward.user_name, forward.name, forward.tunnel_id, COALESCE(tunnel.name, '') AS tunnel_name, forward.remote_addr, COALESCE(forward.strategy, 'fifo') AS strategy, forward.in_flow, forward.out_flow, forward.created_time, forward.status, forward.inx").
+		Select("forward.id, forward.user_id, forward.user_name, forward.name, forward.tunnel_id, COALESCE(tunnel.name, '') AS tunnel_name, forward.remote_addr, COALESCE(forward.strategy, 'fifo') AS strategy, forward.in_flow, forward.out_flow, forward.created_time, forward.status, forward.inx, forward.speed_id").
 		Joins("LEFT JOIN tunnel ON tunnel.id = forward.tunnel_id").
 		Order("forward.inx ASC, forward.id ASC").
 		Find(&rows).Error
@@ -730,14 +737,18 @@ func (r *Repository) ListForwards() ([]map[string]interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]interface{}{
+		item := map[string]interface{}{
 			"id": row.ID, "userId": row.UserID, "userName": row.UserName,
 			"name": row.Name, "tunnelId": row.TunnelID, "tunnelName": row.TunnelName,
 			"inIp": nullableForwardIngress(inIP), "inPort": nullableInt64(inPort),
 			"remoteAddr": row.RemoteAddr, "strategy": row.Strategy,
 			"inFlow": row.InFlow, "outFlow": row.OutFlow,
 			"createdTime": row.CreatedTime, "status": row.Status, "inx": int64(row.Inx),
-		})
+		}
+		if row.SpeedID.Valid {
+			item["speedId"] = row.SpeedID.Int64
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -1308,7 +1319,6 @@ func (r *Repository) ListActiveForwardPeerShareRuntimesByNodeAndServiceName(node
 	return items, nil
 }
 
-
 func (r *Repository) ListActiveForwardPeerShareRuntimeServiceNamesByNode(nodeID int64) ([]string, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("repository not initialized")
@@ -1813,8 +1823,14 @@ func (r *Repository) exportSpeedLimits() ([]model.SpeedLimitBackup, error) {
 	for _, sl := range sls {
 		b := model.SpeedLimitBackup{
 			ID: sl.ID, Name: sl.Name, Speed: int64(sl.Speed),
-			TunnelID: sl.TunnelID, TunnelName: sl.TunnelName,
 			CreatedTime: sl.CreatedTime, Status: sl.Status,
+		}
+		if sl.TunnelID.Valid {
+			tid := sl.TunnelID.Int64
+			b.TunnelID = &tid
+		}
+		if sl.TunnelName.Valid {
+			b.TunnelName = sl.TunnelName.String
 		}
 		if sl.UpdatedTime.Valid {
 			b.UpdatedTime = sl.UpdatedTime.Int64
@@ -2186,11 +2202,17 @@ func importSpeedLimits(tx *gorm.DB, speedLimits []model.SpeedLimitBackup, now in
 			ID:          sl.ID,
 			Name:        sl.Name,
 			Speed:       int(sl.Speed),
-			TunnelID:    sl.TunnelID,
-			TunnelName:  sl.TunnelName,
+			TunnelID:    sql.NullInt64{Int64: 0, Valid: false},
+			TunnelName:  sql.NullString{String: "", Valid: false},
 			CreatedTime: sl.CreatedTime,
 			UpdatedTime: sql.NullInt64{Int64: now, Valid: true},
 			Status:      sl.Status,
+		}
+		if sl.TunnelID != nil {
+			item.TunnelID = sql.NullInt64{Int64: *sl.TunnelID, Valid: true}
+		}
+		if sl.TunnelName != "" {
+			item.TunnelName = sql.NullString{String: sl.TunnelName, Valid: true}
 		}
 		err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},

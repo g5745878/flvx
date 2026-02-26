@@ -228,7 +228,6 @@ func (r *Repository) ListTunnelIDsByNamePrefix(prefix string) ([]int64, error) {
 	return ids, nil
 }
 
-// NextIndex returns COALESCE(MAX(inx), -1) + 1 for the given table.
 func (r *Repository) NextIndex(table string) int {
 	if r == nil || r.db == nil {
 		return 0
@@ -251,7 +250,7 @@ func (r *Repository) NextIndex(table string) int {
 	var row inxRow
 	err := r.db.Model(modelRef).
 		Select("inx").
-		Order("inx DESC").
+		Order("inx ASC, id ASC").
 		Limit(1).
 		Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -260,10 +259,7 @@ func (r *Repository) NextIndex(table string) int {
 	if err != nil {
 		return 0
 	}
-	if row.Inx < 0 {
-		return 0
-	}
-	return row.Inx + 1
+	return row.Inx - 1
 }
 
 // CreateRemoteNode inserts a new remote node.

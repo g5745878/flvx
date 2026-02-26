@@ -29,19 +29,20 @@ func (User) TableName() string { return "user" }
 
 // Forward maps to the "forward" table.
 type Forward struct {
-	ID          int64  `gorm:"primaryKey;autoIncrement"`
-	UserID      int64  `gorm:"column:user_id;not null"`
-	UserName    string `gorm:"column:user_name;type:varchar(100);not null"`
-	Name        string `gorm:"type:varchar(100);not null"`
-	TunnelID    int64  `gorm:"column:tunnel_id;not null"`
-	RemoteAddr  string `gorm:"column:remote_addr;type:text;not null"`
-	Strategy    string `gorm:"type:varchar(100);not null;default:'fifo'"`
-	InFlow      int64  `gorm:"column:in_flow;not null;default:0"`
-	OutFlow     int64  `gorm:"column:out_flow;not null;default:0"`
-	CreatedTime int64  `gorm:"column:created_time;not null"`
-	UpdatedTime int64  `gorm:"column:updated_time;not null"`
-	Status      int    `gorm:"not null"`
-	Inx         int    `gorm:"not null;default:0"`
+	ID          int64         `gorm:"primaryKey;autoIncrement"`
+	UserID      int64         `gorm:"column:user_id;not null"`
+	UserName    string        `gorm:"column:user_name;type:varchar(100);not null"`
+	Name        string        `gorm:"type:varchar(100);not null"`
+	TunnelID    int64         `gorm:"column:tunnel_id;not null"`
+	RemoteAddr  string        `gorm:"column:remote_addr;type:text;not null"`
+	Strategy    string        `gorm:"type:varchar(100);not null;default:'fifo'"`
+	InFlow      int64         `gorm:"not null;default:0"`
+	OutFlow     int64         `gorm:"column:out_flow;not null;default:0"`
+	CreatedTime int64         `gorm:"column:created_time;not null"`
+	UpdatedTime int64         `gorm:"column:updated_time;not null"`
+	Status      int           `gorm:"not null"`
+	Inx         int           `gorm:"not null;default:0"`
+	SpeedID     sql.NullInt64 `gorm:"column:speed_id"`
 }
 
 func (Forward) TableName() string { return "forward" }
@@ -83,14 +84,14 @@ type Node struct {
 func (Node) TableName() string { return "node" }
 
 type SpeedLimit struct {
-	ID          int64         `gorm:"primaryKey;autoIncrement"`
-	Name        string        `gorm:"type:varchar(100);not null"`
-	Speed       int           `gorm:"not null"`
-	TunnelID    int64         `gorm:"column:tunnel_id;not null"`
-	TunnelName  string        `gorm:"column:tunnel_name;type:varchar(100);not null"`
-	CreatedTime int64         `gorm:"column:created_time;not null"`
-	UpdatedTime sql.NullInt64 `gorm:"column:updated_time"`
-	Status      int           `gorm:"not null"`
+	ID          int64          `gorm:"primaryKey;autoIncrement"`
+	Name        string         `gorm:"type:varchar(100);not null"`
+	Speed       int            `gorm:"not null"`
+	TunnelID    sql.NullInt64  `gorm:"column:tunnel_id"`
+	TunnelName  sql.NullString `gorm:"column:tunnel_name;type:varchar(100)"`
+	CreatedTime int64          `gorm:"column:created_time;not null"`
+	UpdatedTime sql.NullInt64  `gorm:"column:updated_time"`
+	Status      int            `gorm:"not null"`
 }
 
 func (SpeedLimit) TableName() string { return "speed_limit" }
@@ -395,6 +396,7 @@ type ForwardBackup struct {
 	UpdatedTime  int64                `json:"updatedTime"`
 	Status       int                  `json:"status"`
 	Inx          int                  `json:"inx"`
+	SpeedID      *int64               `json:"speedId,omitempty"`
 	ForwardPorts *[]ForwardPortBackup `json:"forwardPorts,omitempty"`
 }
 
@@ -421,8 +423,8 @@ type SpeedLimitBackup struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
 	Speed       int64  `json:"speed"`
-	TunnelID    int64  `json:"tunnelId"`
-	TunnelName  string `json:"tunnelName"`
+	TunnelID    *int64 `json:"tunnelId,omitempty"`
+	TunnelName  string `json:"tunnelName,omitempty"`
 	CreatedTime int64  `json:"createdTime"`
 	UpdatedTime int64  `json:"updatedTime,omitempty"`
 	Status      int    `json:"status"`
@@ -492,6 +494,7 @@ type ForwardRecord struct {
 	RemoteAddr string
 	Strategy   string
 	Status     int
+	SpeedID    sql.NullInt64
 }
 
 // TunnelRecord is a minimal tunnel view used by control plane.

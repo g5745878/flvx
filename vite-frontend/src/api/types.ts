@@ -51,6 +51,7 @@ export interface ForwardApiItem {
   outFlow?: number;
   userId?: number;
   tunnelId?: number;
+  speedId?: number | null;
   inx?: number;
   [key: string]: unknown;
 }
@@ -96,10 +97,10 @@ export interface StatisticsFlowApiItem {
 export interface SpeedLimitApiItem {
   id: number;
   name: string;
-  tunnelId: number;
+  tunnelId?: number | null;
   speed: number;
   status: number;
-  tunnelName: string;
+  tunnelName?: string;
   createdTime: string;
   updatedTime: string;
   uploadSpeed?: number;
@@ -284,6 +285,7 @@ export interface ForwardMutationPayload {
   inPort?: number | null;
   remoteAddr?: string;
   strategy?: string;
+  speedId?: number | null;
 }
 
 export interface SpeedLimitMutationPayload {

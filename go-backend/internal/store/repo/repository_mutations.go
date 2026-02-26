@@ -657,7 +657,7 @@ func (r *Repository) GetMinForwardPort(forwardID int64) sql.NullInt64 {
 	return p
 }
 
-func (r *Repository) UpdateForward(id int64, name string, tunnelID int64, remoteAddr, strategy string, now int64) error {
+func (r *Repository) UpdateForward(id int64, name string, tunnelID int64, remoteAddr, strategy string, now int64, speedID interface{}) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
 	}
@@ -668,6 +668,7 @@ func (r *Repository) UpdateForward(id int64, name string, tunnelID int64, remote
 			"tunnel_id":    tunnelID,
 			"remote_addr":  remoteAddr,
 			"strategy":     strategy,
+			"speed_id":     nullInt64FromInterface(speedID),
 			"updated_time": now,
 		}).Error
 }
@@ -724,7 +725,7 @@ func (r *Repository) ReplaceForwardPorts(forwardID int64, entries []struct {
 	})
 }
 
-func (r *Repository) RollbackForwardFields(id, userID int64, userName, name string, tunnelID int64, remoteAddr, strategy string, status int, now int64) {
+func (r *Repository) RollbackForwardFields(id, userID int64, userName, name string, tunnelID int64, remoteAddr, strategy string, status int, speedID interface{}, now int64) {
 	if r == nil || r.db == nil {
 		return
 	}
@@ -738,6 +739,7 @@ func (r *Repository) RollbackForwardFields(id, userID int64, userName, name stri
 			"remote_addr":  remoteAddr,
 			"strategy":     strategy,
 			"status":       status,
+			"speed_id":     nullInt64FromInterface(speedID),
 			"updated_time": now,
 		}).Error
 }
@@ -764,18 +766,24 @@ func (r *Repository) GetUsedPortsOnNodeAsMap(nodeID int64) (map[int]bool, error)
 	return used, nil
 }
 
-func (r *Repository) CreateSpeedLimit(name string, speed int, tunnelID int64, tunnelName string, now int64, status int) (int64, error) {
+func (r *Repository) CreateSpeedLimit(name string, speed int, tunnelID *int64, tunnelName string, now int64, status int) (int64, error) {
 	if r == nil || r.db == nil {
 		return 0, errors.New("repository not initialized")
 	}
 	sl := model.SpeedLimit{
 		Name:        name,
 		Speed:       speed,
-		TunnelID:    tunnelID,
-		TunnelName:  tunnelName,
+		TunnelID:    sql.NullInt64{Int64: 0, Valid: false},
+		TunnelName:  sql.NullString{String: "", Valid: false},
 		CreatedTime: now,
 		UpdatedTime: sql.NullInt64{Int64: now, Valid: true},
 		Status:      status,
+	}
+	if tunnelID != nil {
+		sl.TunnelID = sql.NullInt64{Int64: *tunnelID, Valid: true}
+	}
+	if tunnelName != "" {
+		sl.TunnelName = sql.NullString{String: tunnelName, Valid: true}
 	}
 	if err := r.db.Create(&sl).Error; err != nil {
 		return 0, err
@@ -783,32 +791,41 @@ func (r *Repository) CreateSpeedLimit(name string, speed int, tunnelID int64, tu
 	return sl.ID, nil
 }
 
-func (r *Repository) UpdateSpeedLimit(id int64, name string, speed int, tunnelID int64, tunnelName string, status int, now int64) error {
+func (r *Repository) UpdateSpeedLimit(id int64, name string, speed int, tunnelID *int64, tunnelName string, status int, now int64) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
 	}
+	updates := map[string]interface{}{
+		"name":   name,
+		"speed":  speed,
+		"status": status,
+		"updated_time": sql.NullInt64{
+			Int64: now,
+			Valid: true,
+		},
+	}
+	if tunnelID != nil {
+		updates["tunnel_id"] = sql.NullInt64{Int64: *tunnelID, Valid: true}
+	} else {
+		updates["tunnel_id"] = sql.NullInt64{Int64: 0, Valid: false}
+	}
+	if tunnelName != "" {
+		updates["tunnel_name"] = sql.NullString{String: tunnelName, Valid: true}
+	} else {
+		updates["tunnel_name"] = sql.NullString{String: "", Valid: false}
+	}
 	return r.db.Model(&model.SpeedLimit{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
-			"name":        name,
-			"speed":       speed,
-			"tunnel_id":   tunnelID,
-			"tunnel_name": tunnelName,
-			"status":      status,
-			"updated_time": sql.NullInt64{
-				Int64: now,
-				Valid: true,
-			},
-		}).Error
+		Updates(updates).Error
 }
 
-func (r *Repository) GetSpeedLimitTunnelID(speedLimitID int64) int64 {
+func (r *Repository) GetSpeedLimitTunnelID(speedLimitID int64) sql.NullInt64 {
 	if r == nil || r.db == nil {
-		return 0
+		return sql.NullInt64{Valid: false}
 	}
 	var sl model.SpeedLimit
 	if err := r.db.Select("tunnel_id").Where("id = ?", speedLimitID).First(&sl).Error; err != nil {
-		return 0
+		return sql.NullInt64{Valid: false}
 	}
 	return sl.TunnelID
 }
@@ -1190,7 +1207,7 @@ func (r *Repository) EnsureUserTunnelGrant(userID, tunnelID int64) (int64, bool,
 	return ut.ID, true, nil
 }
 
-func (r *Repository) CreateForwardTx(userID int64, userName, name string, tunnelID int64, remoteAddr, strategy string, now int64, inx int, entryNodeIDs []int64, port int) (int64, error) {
+func (r *Repository) CreateForwardTx(userID int64, userName, name string, tunnelID int64, remoteAddr, strategy string, now int64, inx int, entryNodeIDs []int64, port int, speedID interface{}) (int64, error) {
 	if r == nil || r.db == nil {
 		return 0, errors.New("repository not initialized")
 	}
@@ -1209,6 +1226,7 @@ func (r *Repository) CreateForwardTx(userID int64, userName, name string, tunnel
 			UpdatedTime: now,
 			Status:      1,
 			Inx:         inx,
+			SpeedID:     nullInt64FromInterface(speedID),
 		}
 		if err := tx.Create(&fwd).Error; err != nil {
 			return err

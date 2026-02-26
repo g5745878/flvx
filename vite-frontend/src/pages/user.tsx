@@ -582,12 +582,10 @@ export default function UserPage() {
     }
   };
 
-  const editAvailableSpeedLimits = speedLimits.filter(
-    (speedLimit) => speedLimit.tunnelId === editTunnelForm?.tunnelId,
-  );
+  const editAvailableSpeedLimits = speedLimits;
 
-  const getSpeedLimitsForTunnel = (tunnelId: number) => {
-    return speedLimits.filter((sl) => sl.tunnelId === tunnelId);
+  const getSpeedLimitsForTunnel = (_tunnelId: number) => {
+    return speedLimits;
   };
 
   const toggleTunnelSelection = (tunnelId: number) => {

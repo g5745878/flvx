@@ -1,3 +1,5 @@
+import type { SpeedLimitApiItem } from "@/api/types";
+
 import { useState, useEffect, useMemo } from "react";
 import toast from "react-hot-toast";
 import {
@@ -50,6 +52,7 @@ import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
 import {
   createForward,
   getForwardList,
+  getSpeedLimitList,
   getPeerShareList,
   getPeerRemoteUsageList,
   updateForward,
@@ -105,6 +108,7 @@ interface Forward {
   userName?: string;
   userId?: number;
   inx?: number;
+  speedId?: number | null;
 }
 
 interface Tunnel {
@@ -123,12 +127,14 @@ interface ForwardForm {
   remoteAddr: string;
   interfaceName?: string;
   strategy: string;
+  speedId: number | null;
 }
 
 export default function ForwardPage() {
   const [loading, setLoading] = useState(true);
   const [forwards, setForwards] = useState<Forward[]>([]);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
+  const [speedLimits, setSpeedLimits] = useState<SpeedLimitApiItem[]>([]);
   const isMobile = useMobileBreakpoint();
   const [searchKeyword, setSearchKeyword] = useLocalStorageState(
     "forward-search-keyword",
@@ -206,6 +212,7 @@ export default function ForwardPage() {
     remoteAddr: "",
     interfaceName: "",
     strategy: "fifo",
+    speedId: null,
   });
 
   // 表单验证错误
@@ -327,7 +334,9 @@ export default function ForwardPage() {
 
       const resolveShareIdForForward = (forward: Forward): number | null => {
         const candidates = new Set<number>();
-        const shareIdFromName = parseShareIdFromTunnelName(forward.tunnelName || "");
+        const shareIdFromName = parseShareIdFromTunnelName(
+          forward.tunnelName || "",
+        );
 
         if (shareIdFromName) {
           candidates.add(shareIdFromName);
@@ -445,9 +454,10 @@ export default function ForwardPage() {
   const loadData = async (lod = true) => {
     setLoading(lod);
     try {
-      const [forwardsRes, tunnelsRes] = await Promise.all([
+      const [forwardsRes, tunnelsRes, speedLimitsRes] = await Promise.all([
         getForwardList(),
         userTunnel(),
+        getSpeedLimitList(),
       ]);
 
       if (forwardsRes.code === 0) {
@@ -481,6 +491,10 @@ export default function ForwardPage() {
         setTunnels(tunnelsRes.data || []);
       } else {
       }
+
+      if (speedLimitsRes.code === 0) {
+        setSpeedLimits(speedLimitsRes.data || []);
+      }
     } catch {
       toast.error("加载数据失败");
     } finally {
@@ -489,6 +503,10 @@ export default function ForwardPage() {
   };
 
   // 表单验证
+  const availableSpeedLimits = useMemo(() => {
+    return speedLimits;
+  }, [speedLimits]);
+
   const validateForm = (): boolean => {
     const newErrors: { [key: string]: string } = {};
 
@@ -555,6 +573,7 @@ export default function ForwardPage() {
       remoteAddr: "",
       interfaceName: "",
       strategy: "fifo",
+      speedId: null,
     });
     setErrors({});
     setModalOpen(true);
@@ -572,6 +591,7 @@ export default function ForwardPage() {
       remoteAddr: forward.remoteAddr.split(",").join("\n"),
       interfaceName: forward.interfaceName || "",
       strategy: forward.strategy || "fifo",
+      speedId: forward.speedId ?? null,
     });
     setErrors({});
     setModalOpen(true);
@@ -651,6 +671,7 @@ export default function ForwardPage() {
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           strategy: addressCount > 1 ? form.strategy : "fifo",
+          speedId: form.speedId,
         };
 
         res = await updateForward(updateData);
@@ -662,6 +683,7 @@ export default function ForwardPage() {
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           strategy: addressCount > 1 ? form.strategy : "fifo",
+          speedId: form.speedId,
         };
 
         res = await createForward(createData);
@@ -1346,7 +1368,11 @@ export default function ForwardPage() {
       const aInx = a.inx ?? 0;
       const bInx = b.inx ?? 0;
 
-      return aInx - bInx;
+      if (aInx !== bInx) {
+        return aInx - bInx;
+      }
+
+      return (a.id ?? 0) - (b.id ?? 0);
     });
 
     // 如果数据库中没有排序信息，则使用本地存储的顺序
@@ -1511,6 +1537,9 @@ export default function ForwardPage() {
             {forward.userName || "未知用户"}
           </span>
         </TableCell>
+        <TableCell className="whitespace-nowrap font-semibold text-foreground">
+          {forward.name}
+        </TableCell>
         <TableCell className="whitespace-nowrap">
           <Chip
             className="border-none bg-secondary/10 px-2"
@@ -1521,9 +1550,6 @@ export default function ForwardPage() {
               {forward.tunnelName}
             </span>
           </Chip>
-        </TableCell>
-        <TableCell className="whitespace-nowrap font-semibold text-foreground">
-          {forward.name}
         </TableCell>
         <TableCell className="max-w-[220px]">
           <button
@@ -2181,8 +2207,8 @@ export default function ForwardPage() {
                   )}
                   <TableColumn className="w-10 pl-4" />
                   <TableColumn>用户</TableColumn>
-                  <TableColumn>隧道</TableColumn>
                   <TableColumn>名称</TableColumn>
+                  <TableColumn>隧道</TableColumn>
                   <TableColumn>入口</TableColumn>
                   <TableColumn>目标</TableColumn>
                   <TableColumn>策略</TableColumn>
@@ -2300,6 +2326,38 @@ export default function ForwardPage() {
                       setForm((prev) => ({ ...prev, name: e.target.value }))
                     }
                   />
+
+                  <Select
+                    label="限速规则"
+                    placeholder="不限速"
+                    selectedKeys={
+                      form.speedId !== null && form.speedId !== undefined
+                        ? [form.speedId.toString()]
+                        : ["null"]
+                    }
+                    variant="bordered"
+                    onSelectionChange={(keys) => {
+                      const selectedKey = Array.from(keys)[0] as string;
+
+                      setForm((prev) => ({
+                        ...prev,
+                        speedId:
+                          selectedKey === "null" ? null : Number(selectedKey),
+                      }));
+                    }}
+                  >
+                    <SelectItem key="null" textValue="不限速">
+                      不限速
+                    </SelectItem>
+                    {availableSpeedLimits.map((speedLimit) => (
+                      <SelectItem
+                        key={speedLimit.id.toString()}
+                        textValue={speedLimit.name}
+                      >
+                        {speedLimit.name}
+                      </SelectItem>
+                    ))}
+                  </Select>
 
                   <Select
                     description={
