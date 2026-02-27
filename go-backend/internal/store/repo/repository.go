@@ -688,12 +688,6 @@ func (r *Repository) ListSpeedLimits() ([]map[string]interface{}, error) {
 			"status": sl.Status, "createdTime": sl.CreatedTime,
 			"updatedTime": nullableInt64(sl.UpdatedTime),
 		}
-		if sl.TunnelID.Valid {
-			item["tunnelId"] = sl.TunnelID.Int64
-		}
-		if sl.TunnelName.Valid {
-			item["tunnelName"] = sl.TunnelName.String
-		}
 		items = append(items, item)
 	}
 	return items, nil
@@ -1825,13 +1819,6 @@ func (r *Repository) exportSpeedLimits() ([]model.SpeedLimitBackup, error) {
 			ID: sl.ID, Name: sl.Name, Speed: int64(sl.Speed),
 			CreatedTime: sl.CreatedTime, Status: sl.Status,
 		}
-		if sl.TunnelID.Valid {
-			tid := sl.TunnelID.Int64
-			b.TunnelID = &tid
-		}
-		if sl.TunnelName.Valid {
-			b.TunnelName = sl.TunnelName.String
-		}
 		if sl.UpdatedTime.Valid {
 			b.UpdatedTime = sl.UpdatedTime.Int64
 		}
@@ -2208,12 +2195,6 @@ func importSpeedLimits(tx *gorm.DB, speedLimits []model.SpeedLimitBackup, now in
 			UpdatedTime: sql.NullInt64{Int64: now, Valid: true},
 			Status:      sl.Status,
 		}
-		if sl.TunnelID != nil {
-			item.TunnelID = sql.NullInt64{Int64: *sl.TunnelID, Valid: true}
-		}
-		if sl.TunnelName != "" {
-			item.TunnelName = sql.NullString{String: sl.TunnelName, Valid: true}
-		}
 		err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
@@ -2482,10 +2463,11 @@ func (r *Repository) GetUserTunnelByID(id int64) (*model.UserTunnel, error) {
 
 // ─── Migration ───────────────────────────────────────────────────────
 
-const currentSchemaVersion = 3
+const currentSchemaVersion = 4
 
 var ensurePostgresIDDefaultsFn = ensurePostgresIDDefaults
 var migrateViteConfigValueColumnTypeFn = migrateViteConfigValueColumnType
+var migrateSpeedLimitTunnelBindingFn = migrateSpeedLimitTunnelBinding
 
 func getSchemaVersion(db *gorm.DB) int {
 	var v model.SchemaVersion
@@ -2543,6 +2525,12 @@ func migrateSchema(db *gorm.DB) error {
 		}
 	}
 
+	if ver < 4 {
+		if err := migrateSpeedLimitTunnelBindingFn(db); err != nil {
+			return err
+		}
+	}
+
 	setSchemaVersion(db, currentSchemaVersion)
 	return nil
 }
@@ -2581,6 +2569,27 @@ func migrateViteConfigValueColumnType(db *gorm.DB) error {
 
 	if err := db.Exec(`ALTER TABLE "vite_config" ALTER COLUMN "value" TYPE TEXT`).Error; err != nil {
 		return fmt.Errorf("alter vite_config.value to text: %w", err)
+	}
+
+	return nil
+}
+
+func migrateSpeedLimitTunnelBinding(db *gorm.DB) error {
+	if db == nil {
+		return errors.New("nil db")
+	}
+
+	if !db.Migrator().HasTable(&model.SpeedLimit{}) {
+		return nil
+	}
+
+	if err := db.Model(&model.SpeedLimit{}).
+		Where("tunnel_id IS NOT NULL OR tunnel_name IS NOT NULL").
+		UpdateColumns(map[string]interface{}{
+			"tunnel_id":   nil,
+			"tunnel_name": nil,
+		}).Error; err != nil {
+		return fmt.Errorf("clear speed_limit tunnel binding: %w", err)
 	}
 
 	return nil

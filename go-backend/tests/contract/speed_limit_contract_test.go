@@ -15,7 +15,6 @@ import (
 	"go-backend/internal/store/repo"
 )
 
-// TestSpeedLimitWithoutTunnelContract tests that speed limits can be created without binding to a tunnel
 func TestSpeedLimitWithoutTunnelContract(t *testing.T) {
 	secret := "contract-jwt-secret"
 	router, _ := setupContractRouter(t, secret)
@@ -25,8 +24,7 @@ func TestSpeedLimitWithoutTunnelContract(t *testing.T) {
 		t.Fatalf("generate admin token: %v", err)
 	}
 
-	// Create a speed limit without tunnel binding
-	t.Run("create speed limit without tunnel", func(t *testing.T) {
+	t.Run("create speed limit", func(t *testing.T) {
 		body := `{"name":"test-limit-no-tunnel","speed":100,"status":1}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/create", bytes.NewBufferString(body))
 		req.Header.Set("Authorization", adminToken)
@@ -37,8 +35,7 @@ func TestSpeedLimitWithoutTunnelContract(t *testing.T) {
 		assertCode(t, res, 0)
 	})
 
-	// Verify the speed limit has null tunnelId
-	t.Run("list speed limits shows null tunnelId", func(t *testing.T) {
+	t.Run("list does not expose tunnel binding fields", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/list", nil)
 		req.Header.Set("Authorization", adminToken)
 		res := httptest.NewRecorder()
@@ -57,31 +54,28 @@ func TestSpeedLimitWithoutTunnelContract(t *testing.T) {
 			t.Fatalf("expected data to be array, got %T", out.Data)
 		}
 
-		// Find our speed limit
-		var found bool
 		for _, item := range data {
 			m, ok := item.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			if m["name"] == "test-limit-no-tunnel" {
-				found = true
-				// tunnelId should be nil/not present for unbound speed limits
-				if tunnelID, exists := m["tunnelId"]; exists && tunnelID != nil {
-					t.Fatalf("expected tunnelId to be nil for unbound speed limit, got %v", tunnelID)
-				}
-				break
+			if m["name"] != "test-limit-no-tunnel" {
+				continue
 			}
+			if tunnelID, exists := m["tunnelId"]; exists && tunnelID != nil {
+				t.Fatalf("expected tunnelId to be absent or nil, got %v", tunnelID)
+			}
+			if tunnelName, exists := m["tunnelName"]; exists && tunnelName != nil && tunnelName != "" {
+				t.Fatalf("expected tunnelName to be absent or empty, got %v", tunnelName)
+			}
+			return
 		}
 
-		if !found {
-			t.Fatal("speed limit 'test-limit-no-tunnel' not found in list")
-		}
+		t.Fatal("speed limit 'test-limit-no-tunnel' not found in list")
 	})
 }
 
-// TestSpeedLimitWithTunnelContract tests that speed limits can still be bound to tunnels
-func TestSpeedLimitWithTunnelContract(t *testing.T) {
+func TestSpeedLimitCreateIgnoresTunnelBindingContract(t *testing.T) {
 	secret := "contract-jwt-secret"
 	router, r := setupContractRouter(t, secret)
 
@@ -90,71 +84,56 @@ func TestSpeedLimitWithTunnelContract(t *testing.T) {
 		t.Fatalf("generate admin token: %v", err)
 	}
 
-	// First create a tunnel
-	tunnelID := mustCreateSpeedLimitTunnel(t, r, "test-tunnel-for-limit")
+	tunnelID := mustCreateSpeedLimitTunnel(t, r, "test-speed-limit-create-ignore-tunnel")
 
-	// Create a speed limit with tunnel binding
-	t.Run("create speed limit with tunnel", func(t *testing.T) {
-		body := `{"name":"test-limit-with-tunnel","speed":200,"tunnelId":` + jsonInt(tunnelID) + `,"status":1}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/create", bytes.NewBufferString(body))
-		req.Header.Set("Authorization", adminToken)
-		req.Header.Set("Content-Type", "application/json")
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
+	body := `{"name":"test-limit-ignore-tunnel","speed":200,"tunnelId":` + jsonInt(tunnelID) + `,"status":1}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/create", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", adminToken)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
 
-		assertCode(t, res, 0)
-	})
+	assertCode(t, res, 0)
 
-	// Verify the speed limit has the tunnelId
-	t.Run("list speed limits shows tunnelId", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/list", nil)
-		req.Header.Set("Authorization", adminToken)
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/list", nil)
+	req.Header.Set("Authorization", adminToken)
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
 
-		var out response.R
-		if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-			t.Fatalf("decode response: %v", err)
-		}
-		if out.Code != 0 {
-			t.Fatalf("expected code 0, got %d", out.Code)
-		}
+	var out response.R
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if out.Code != 0 {
+		t.Fatalf("expected code 0, got %d", out.Code)
+	}
 
-		data, ok := out.Data.([]interface{})
+	data, ok := out.Data.([]interface{})
+	if !ok {
+		t.Fatalf("expected data to be array, got %T", out.Data)
+	}
+
+	for _, item := range data {
+		m, ok := item.(map[string]interface{})
 		if !ok {
-			t.Fatalf("expected data to be array, got %T", out.Data)
+			continue
 		}
+		if m["name"] != "test-limit-ignore-tunnel" {
+			continue
+		}
+		if tunnelIDVal, exists := m["tunnelId"]; exists && tunnelIDVal != nil {
+			t.Fatalf("expected tunnelId ignored and nil, got %v", tunnelIDVal)
+		}
+		if tunnelNameVal, exists := m["tunnelName"]; exists && tunnelNameVal != nil && tunnelNameVal != "" {
+			t.Fatalf("expected tunnelName ignored and empty, got %v", tunnelNameVal)
+		}
+		return
+	}
 
-		var found bool
-		for _, item := range data {
-			m, ok := item.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if m["name"] == "test-limit-with-tunnel" {
-				found = true
-				tunnelIDVal, exists := m["tunnelId"]
-				if !exists || tunnelIDVal == nil {
-					t.Fatal("expected tunnelId to be present for bound speed limit")
-				}
-				// Verify tunnelId matches
-				if tunnelIDFloat, ok := tunnelIDVal.(float64); ok {
-					if int64(tunnelIDFloat) != tunnelID {
-						t.Fatalf("expected tunnelId %d, got %d", tunnelID, int64(tunnelIDFloat))
-					}
-				}
-				break
-			}
-		}
-
-		if !found {
-			t.Fatal("speed limit 'test-limit-with-tunnel' not found in list")
-		}
-	})
+	t.Fatal("speed limit 'test-limit-ignore-tunnel' not found in list")
 }
 
-// TestSpeedLimitUpdateTunnelBindingContract tests updating speed limit tunnel binding
-func TestSpeedLimitUpdateTunnelBindingContract(t *testing.T) {
+func TestSpeedLimitUpdateIgnoresTunnelBindingContract(t *testing.T) {
 	secret := "contract-jwt-secret"
 	router, r := setupContractRouter(t, secret)
 
@@ -163,109 +142,56 @@ func TestSpeedLimitUpdateTunnelBindingContract(t *testing.T) {
 		t.Fatalf("generate admin token: %v", err)
 	}
 
-	// Create a tunnel
-	tunnelID := mustCreateSpeedLimitTunnel(t, r, "test-tunnel-update")
+	tunnelID := mustCreateSpeedLimitTunnel(t, r, "test-speed-limit-update-ignore-tunnel")
+	speedLimitID := mustCreateSpeedLimitRepo(t, r, "test-limit-update-ignore-tunnel")
 
-	// Create a speed limit without tunnel
-	speedLimitID := mustCreateSpeedLimitRepo(t, r, "test-limit-update", 0)
+	body := `{"id":` + jsonInt(speedLimitID) + `,"name":"test-limit-update-ignore-tunnel","speed":256,"tunnelId":` + jsonInt(tunnelID) + `,"status":1}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/update", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", adminToken)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
 
-	// Update to bind to tunnel
-	t.Run("update speed limit to bind tunnel", func(t *testing.T) {
-		body := `{"id":` + jsonInt(speedLimitID) + `,"name":"test-limit-update","speed":150,"tunnelId":` + jsonInt(tunnelID) + `,"status":1}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/update", bytes.NewBufferString(body))
-		req.Header.Set("Authorization", adminToken)
-		req.Header.Set("Content-Type", "application/json")
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
+	assertCode(t, res, 0)
 
-		assertCode(t, res, 0)
-	})
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/list", nil)
+	req.Header.Set("Authorization", adminToken)
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
 
-	// Verify binding
-	t.Run("verify tunnel binding after update", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/list", nil)
-		req.Header.Set("Authorization", adminToken)
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
+	var out response.R
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if out.Code != 0 {
+		t.Fatalf("expected code 0, got %d", out.Code)
+	}
 
-		var out response.R
-		if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-			t.Fatalf("decode response: %v", err)
-		}
-		if out.Code != 0 {
-			t.Fatalf("expected code 0, got %d", out.Code)
-		}
+	data, ok := out.Data.([]interface{})
+	if !ok {
+		t.Fatalf("expected data to be array, got %T", out.Data)
+	}
 
-		data, ok := out.Data.([]interface{})
+	for _, item := range data {
+		m, ok := item.(map[string]interface{})
 		if !ok {
-			t.Fatalf("expected data to be array, got %T", out.Data)
+			continue
 		}
-
-		for _, item := range data {
-			m, ok := item.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if m["name"] == "test-limit-update" {
-				tunnelIDVal, exists := m["tunnelId"]
-				if !exists || tunnelIDVal == nil {
-					t.Fatal("expected tunnelId to be present after update")
-				}
-				return
-			}
+		if m["name"] != "test-limit-update-ignore-tunnel" {
+			continue
 		}
-		t.Fatal("speed limit 'test-limit-update' not found")
-	})
-
-	// Update to unbind from tunnel (set tunnelId to null)
-	t.Run("update speed limit to unbind tunnel", func(t *testing.T) {
-		body := `{"id":` + jsonInt(speedLimitID) + `,"name":"test-limit-update","speed":150,"status":1}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/update", bytes.NewBufferString(body))
-		req.Header.Set("Authorization", adminToken)
-		req.Header.Set("Content-Type", "application/json")
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
-
-		assertCode(t, res, 0)
-	})
-
-	// Verify unbinding
-	t.Run("verify tunnel unbinding after update", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/list", nil)
-		req.Header.Set("Authorization", adminToken)
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
-
-		var out response.R
-		if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-			t.Fatalf("decode response: %v", err)
+		if tunnelIDVal, exists := m["tunnelId"]; exists && tunnelIDVal != nil {
+			t.Fatalf("expected tunnelId ignored and nil after update, got %v", tunnelIDVal)
 		}
-		if out.Code != 0 {
-			t.Fatalf("expected code 0, got %d", out.Code)
+		if speedVal, ok := m["speed"].(float64); !ok || int(speedVal) != 256 {
+			t.Fatalf("expected speed 256 after update, got %v", m["speed"])
 		}
+		return
+	}
 
-		data, ok := out.Data.([]interface{})
-		if !ok {
-			t.Fatalf("expected data to be array, got %T", out.Data)
-		}
-
-		for _, item := range data {
-			m, ok := item.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if m["name"] == "test-limit-update" {
-				if tunnelIDVal, exists := m["tunnelId"]; exists && tunnelIDVal != nil {
-					t.Fatalf("expected tunnelId to be nil after unbinding, got %v", tunnelIDVal)
-				}
-				return
-			}
-		}
-		t.Fatal("speed limit 'test-limit-update' not found")
-	})
+	t.Fatal("speed limit 'test-limit-update-ignore-tunnel' not found in list")
 }
 
-// TestSpeedLimitDatabaseNullableFields tests database-level nullable fields
 func TestSpeedLimitDatabaseNullableFields(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "speed-limit-null.db")
 	r, err := repo.Open(dbPath)
@@ -274,132 +200,65 @@ func TestSpeedLimitDatabaseNullableFields(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = r.Close() })
 
-	// Create speed limit via repository
-	t.Run("repository create speed limit without tunnel", func(t *testing.T) {
-		id, err := r.CreateSpeedLimit("db-test-limit", 100, nil, "", 1, 1)
-		if err != nil {
-			t.Fatalf("CreateSpeedLimit failed: %v", err)
-		}
-		if id <= 0 {
-			t.Fatalf("expected valid id, got %d", id)
-		}
-	})
+	id, err := r.CreateSpeedLimit("db-test-limit", 100, 1, 1)
+	if err != nil {
+		t.Fatalf("CreateSpeedLimit failed: %v", err)
+	}
+	if id <= 0 {
+		t.Fatalf("expected valid id, got %d", id)
+	}
 
-	// Verify TunnelID is null in database
-	t.Run("verify null TunnelID in database", func(t *testing.T) {
-		var tunnelID sql.NullInt64
-		var tunnelName sql.NullString
-		err := r.DB().Raw("SELECT tunnel_id, tunnel_name FROM speed_limit WHERE name = ?", "db-test-limit").Row().Scan(&tunnelID, &tunnelName)
-		if err != nil {
-			t.Fatalf("query failed: %v", err)
-		}
-		if tunnelID.Valid {
-			t.Fatalf("expected TunnelID to be NULL, got %d", tunnelID.Int64)
-		}
-		if tunnelName.Valid && tunnelName.String != "" {
-			t.Fatalf("expected TunnelName to be NULL or empty, got %s", tunnelName.String)
-		}
-	})
-
-	// Create a tunnel for binding test
-	tunnelID := mustCreateSpeedLimitTunnel(t, r, "db-test-tunnel")
-
-	// Create speed limit with tunnel
-	t.Run("repository create speed limit with tunnel", func(t *testing.T) {
-		id, err := r.CreateSpeedLimit("db-test-limit-with-tunnel", 200, &tunnelID, "db-test-tunnel", 1, 1)
-		if err != nil {
-			t.Fatalf("CreateSpeedLimit failed: %v", err)
-		}
-		if id <= 0 {
-			t.Fatalf("expected valid id, got %d", id)
-		}
-	})
-
-	// Verify TunnelID is set
-	t.Run("verify TunnelID is set in database", func(t *testing.T) {
-		var dbTunnelID sql.NullInt64
-		var dbTunnelName sql.NullString
-		err := r.DB().Raw("SELECT tunnel_id, tunnel_name FROM speed_limit WHERE name = ?", "db-test-limit-with-tunnel").Row().Scan(&dbTunnelID, &dbTunnelName)
-		if err != nil {
-			t.Fatalf("query failed: %v", err)
-		}
-		if !dbTunnelID.Valid {
-			t.Fatal("expected TunnelID to be valid")
-		}
-		if dbTunnelID.Int64 != tunnelID {
-			t.Fatalf("expected TunnelID %d, got %d", tunnelID, dbTunnelID.Int64)
-		}
-		if !dbTunnelName.Valid || dbTunnelName.String != "db-test-tunnel" {
-			t.Fatalf("expected TunnelName 'db-test-tunnel', got %v", dbTunnelName.String)
-		}
-	})
-
-	// Test GetSpeedLimitTunnelID returns correct nullability
-	t.Run("GetSpeedLimitTunnelID returns null for unbound limit", func(t *testing.T) {
-		result := r.GetSpeedLimitTunnelID(1) // First speed limit (db-test-limit)
-		if result.Valid {
-			t.Fatalf("expected GetSpeedLimitTunnelID to return invalid/null, got valid with value %d", result.Int64)
-		}
-	})
-
-	t.Run("GetSpeedLimitTunnelID returns value for bound limit", func(t *testing.T) {
-		result := r.GetSpeedLimitTunnelID(2) // Second speed limit (db-test-limit-with-tunnel)
-		if !result.Valid {
-			t.Fatal("expected GetSpeedLimitTunnelID to return valid result for bound limit")
-		}
-		if result.Int64 != tunnelID {
-			t.Fatalf("expected TunnelID %d, got %d", tunnelID, result.Int64)
-		}
-	})
+	var tunnelID sql.NullInt64
+	var tunnelName sql.NullString
+	err = r.DB().Raw("SELECT tunnel_id, tunnel_name FROM speed_limit WHERE id = ?", id).Row().Scan(&tunnelID, &tunnelName)
+	if err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+	if tunnelID.Valid {
+		t.Fatalf("expected TunnelID to be NULL, got %d", tunnelID.Int64)
+	}
+	if tunnelName.Valid && tunnelName.String != "" {
+		t.Fatalf("expected TunnelName to be NULL or empty, got %s", tunnelName.String)
+	}
 }
 
-// TestSpeedLimitUpdateUnbindFromTunnel tests unbinding a speed limit from a tunnel
-func TestSpeedLimitUpdateUnbindFromTunnel(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "speed-limit-unbind.db")
+func TestSpeedLimitUpdateClearsHistoricalBinding(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "speed-limit-update-clear.db")
 	r, err := repo.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
 
-	// Create tunnel
-	tunnelID := mustCreateSpeedLimitTunnel(t, r, "unbind-test-tunnel")
+	tunnelID := mustCreateSpeedLimitTunnel(t, r, "speed-limit-update-clear-tunnel")
+	now := time.Now().UnixMilli()
+	if err := r.DB().Exec(`
+		INSERT INTO speed_limit(name, speed, tunnel_id, tunnel_name, created_time, updated_time, status)
+		VALUES(?, ?, ?, ?, ?, ?, ?)
+	`, "speed-limit-update-clear", 300, tunnelID, "speed-limit-update-clear-tunnel", now, now, 1).Error; err != nil {
+		t.Fatalf("insert speed limit with tunnel binding: %v", err)
+	}
+	speedLimitID := mustLastInsertID(t, r, "speed-limit-update-clear")
 
-	// Create speed limit bound to tunnel
-	speedLimitID, err := r.CreateSpeedLimit("unbind-test-limit", 300, &tunnelID, "unbind-test-tunnel", 1, 1)
+	err = r.UpdateSpeedLimit(speedLimitID, "speed-limit-update-clear", 512, 1, time.Now().UnixMilli())
 	if err != nil {
-		t.Fatalf("create speed limit: %v", err)
+		t.Fatalf("UpdateSpeedLimit failed: %v", err)
 	}
 
-	// Verify initial binding
-	t.Run("verify initial binding", func(t *testing.T) {
-		result := r.GetSpeedLimitTunnelID(speedLimitID)
-		if !result.Valid {
-			t.Fatal("expected initial binding to tunnel")
-		}
-		if result.Int64 != tunnelID {
-			t.Fatalf("expected tunnel ID %d, got %d", tunnelID, result.Int64)
-		}
-	})
-
-	// Update to unbind
-	t.Run("unbind speed limit from tunnel via UpdateSpeedLimit", func(t *testing.T) {
-		err := r.UpdateSpeedLimit(speedLimitID, "unbind-test-limit", 300, nil, "", 1, time.Now().UnixMilli())
-		if err != nil {
-			t.Fatalf("UpdateSpeedLimit failed: %v", err)
-		}
-	})
-
-	// Verify unbinding
-	t.Run("verify unbinding after update", func(t *testing.T) {
-		result := r.GetSpeedLimitTunnelID(speedLimitID)
-		if result.Valid {
-			t.Fatalf("expected GetSpeedLimitTunnelID to return invalid/null after unbind, got valid with value %d", result.Int64)
-		}
-	})
+	var dbTunnelID sql.NullInt64
+	var dbTunnelName sql.NullString
+	err = r.DB().Raw("SELECT tunnel_id, tunnel_name FROM speed_limit WHERE id = ?", speedLimitID).Row().Scan(&dbTunnelID, &dbTunnelName)
+	if err != nil {
+		t.Fatalf("query updated speed limit failed: %v", err)
+	}
+	if dbTunnelID.Valid {
+		t.Fatalf("expected tunnel_id cleared after update, got %d", dbTunnelID.Int64)
+	}
+	if dbTunnelName.Valid && dbTunnelName.String != "" {
+		t.Fatalf("expected tunnel_name cleared after update, got %q", dbTunnelName.String)
+	}
 }
 
-// TestSpeedLimitGetSpeed tests the GetSpeedLimitSpeed function
 func TestSpeedLimitGetSpeed(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "speed-limit-getspeed.db")
 	r, err := repo.Open(dbPath)
@@ -408,13 +267,11 @@ func TestSpeedLimitGetSpeed(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = r.Close() })
 
-	// Create speed limit
-	speedLimitID, err := r.CreateSpeedLimit("get-speed-test", 500, nil, "", 1, 1)
+	speedLimitID, err := r.CreateSpeedLimit("get-speed-test", 500, 1, 1)
 	if err != nil {
 		t.Fatalf("create speed limit: %v", err)
 	}
 
-	// Test GetSpeedLimitSpeed
 	t.Run("GetSpeedLimitSpeed returns correct speed", func(t *testing.T) {
 		speed, err := r.GetSpeedLimitSpeed(speedLimitID)
 		if err != nil {
@@ -433,8 +290,6 @@ func TestSpeedLimitGetSpeed(t *testing.T) {
 	})
 }
 
-// Helper functions
-
 func mustCreateSpeedLimitTunnel(t *testing.T, r *repo.Repository, name string) int64 {
 	t.Helper()
 	now := time.Now().UnixMilli()
@@ -447,14 +302,10 @@ func mustCreateSpeedLimitTunnel(t *testing.T, r *repo.Repository, name string) i
 	return mustLastInsertID(t, r, name)
 }
 
-func mustCreateSpeedLimitRepo(t *testing.T, r *repo.Repository, name string, tunnelID int64) int64 {
+func mustCreateSpeedLimitRepo(t *testing.T, r *repo.Repository, name string) int64 {
 	t.Helper()
 	now := time.Now().UnixMilli()
-	var tid *int64
-	if tunnelID > 0 {
-		tid = &tunnelID
-	}
-	id, err := r.CreateSpeedLimit(name, 100, tid, "", now, 1)
+	id, err := r.CreateSpeedLimit(name, 100, now, 1)
 	if err != nil {
 		t.Fatalf("create speed limit failed: %v", err)
 	}

@@ -97,10 +97,8 @@ export interface StatisticsFlowApiItem {
 export interface SpeedLimitApiItem {
   id: number;
   name: string;
-  tunnelId?: number | null;
   speed: number;
   status: number;
-  tunnelName?: string;
   createdTime: string;
   updatedTime: string;
   uploadSpeed?: number;
@@ -293,8 +291,6 @@ export interface SpeedLimitMutationPayload {
   name?: string;
   speed?: number;
   status?: number;
-  tunnelId?: number | null;
-  tunnelName?: string;
 }
 
 export interface UpdatePasswordPayload {

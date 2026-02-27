@@ -159,7 +159,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/speed-limit/create", h.speedLimitCreate)
 	mux.HandleFunc("/api/v1/speed-limit/update", h.speedLimitUpdate)
 	mux.HandleFunc("/api/v1/speed-limit/delete", h.speedLimitDelete)
-	mux.HandleFunc("/api/v1/speed-limit/tunnels", h.tunnelList)
 	mux.HandleFunc("/api/v1/tunnel/user/tunnel", h.userTunnelVisibleList)
 	mux.HandleFunc("/api/v1/tunnel/user/list", h.userTunnelList)
 	mux.HandleFunc("/api/v1/group/tunnel/list", h.tunnelGroupList)

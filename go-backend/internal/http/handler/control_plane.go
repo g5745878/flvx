@@ -1028,51 +1028,45 @@ func asBool(v interface{}, def bool) bool {
 	}
 }
 
-func (h *Handler) sendLimiterConfig(limiterID int64, speedMbps int, tunnelID int64) error {
-	rate := float64(speedMbps) / 8.0
-	limitStr := fmt.Sprintf("$ %.1fMB %.1fMB", rate, rate)
-
-	payload := map[string]interface{}{
-		"name":   strconv.FormatInt(limiterID, 10),
-		"limits": []string{limitStr},
-	}
-
-	nodes, err := h.tunnelEntryNodeIDs(tunnelID)
-	if err != nil {
-		return err
-	}
-
-	for _, nodeID := range nodes {
-		_, _ = h.sendNodeCommand(nodeID, "AddLimiters", payload, false, false)
-	}
-	return nil
-}
-
-func (h *Handler) sendDeleteLimiterConfig(limiterID int64, tunnelID int64) error {
-	payload := map[string]interface{}{
-		"limiter": strconv.FormatInt(limiterID, 10),
-	}
-
-	nodes, err := h.tunnelEntryNodeIDs(tunnelID)
-	if err != nil {
-		return err
-	}
-
-	for _, nodeID := range nodes {
-		_, _ = h.sendNodeCommand(nodeID, "DeleteLimiters", payload, false, true)
-	}
-	return nil
-}
-
 func (h *Handler) ensureLimiterOnNode(nodeID int64, limiterID int64, speed int) error {
+	if err := h.upsertLimiterOnNode(nodeID, limiterID, speed); err != nil {
+		return fmt.Errorf("限速规则下发失败: %w", err)
+	}
+
+	return nil
+}
+
+func buildLimiterAddPayload(limiterID int64, speed int) (string, map[string]interface{}) {
 	rate := float64(speed) / 8.0
 	limitStr := fmt.Sprintf("$ %.1fMB %.1fMB", rate, rate)
-	payload := map[string]interface{}{
-		"name":   strconv.FormatInt(limiterID, 10),
+	name := strconv.FormatInt(limiterID, 10)
+
+	return name, map[string]interface{}{
+		"name":   name,
 		"limits": []string{limitStr},
 	}
-	if _, err := h.sendNodeCommand(nodeID, "AddLimiters", payload, false, false); err != nil {
-		return fmt.Errorf("限速规则下发失败: %w", err)
+}
+
+func buildLimiterUpdatePayload(name string, data map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"limiter": name,
+		"data":    data,
+	}
+}
+
+func (h *Handler) upsertLimiterOnNode(nodeID int64, limiterID int64, speed int) error {
+	name, addPayload := buildLimiterAddPayload(limiterID, speed)
+	if _, err := h.sendNodeCommand(nodeID, "AddLimiters", addPayload, false, false); err != nil {
+		if !isAlreadyExistsMessage(err.Error()) {
+			return err
+		}
+		payload := map[string]interface{}{
+			"name":   name,
+			"limits": addPayload["limits"],
+		}
+		if _, updateErr := h.sendNodeCommand(nodeID, "UpdateLimiters", buildLimiterUpdatePayload(name, payload), false, false); updateErr != nil {
+			return updateErr
+		}
 	}
 
 	return nil

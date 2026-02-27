@@ -99,6 +99,168 @@ func TestForwardCreateRollbackWhenLimiterDispatchFailsContract(t *testing.T) {
 	}
 }
 
+func TestForwardCreateSucceedsWhenLimiterAlreadyExistsAndUpdateSucceedsContract(t *testing.T) {
+	secret := "contract-jwt-secret"
+	router, r := setupContractRouter(t, secret)
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	adminToken, err := auth.GenerateToken(1, "admin_user", 0, secret)
+	if err != nil {
+		t.Fatalf("generate admin token: %v", err)
+	}
+
+	now := time.Now().UnixMilli()
+	if err := r.DB().Exec(`
+		INSERT INTO tunnel(name, traffic_ratio, type, protocol, flow, created_time, updated_time, status, in_ip, inx)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, "limiter-exists-update-ok-tunnel", 1.0, 1, "tls", 99999, now, now, 1, nil, 0).Error; err != nil {
+		t.Fatalf("insert tunnel: %v", err)
+	}
+	tunnelID := mustLastInsertID(t, r, "limiter-exists-update-ok-tunnel")
+
+	if err := r.DB().Exec(`
+		INSERT INTO node(name, secret, server_ip, server_ip_v4, server_ip_v6, port, interface_name, version, http, tls, socks, created_time, updated_time, status, tcp_listen_addr, udp_listen_addr, inx)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, "limiter-exists-update-ok-node", "limiter-exists-update-ok-secret", "10.20.1.1", "10.20.1.1", "", "32200-32210", "", "v1", 1, 1, 1, now, now, 1, "[::]", "[::]", 0).Error; err != nil {
+		t.Fatalf("insert node: %v", err)
+	}
+	nodeID := mustLastInsertID(t, r, "limiter-exists-update-ok-node")
+
+	if err := r.DB().Exec(`
+		INSERT INTO chain_tunnel(tunnel_id, chain_type, node_id, port, strategy, inx, protocol)
+		VALUES(?, 1, ?, 32201, 'round', 1, 'tls')
+	`, tunnelID, nodeID).Error; err != nil {
+		t.Fatalf("insert chain_tunnel: %v", err)
+	}
+
+	if err := r.DB().Exec(`
+		INSERT INTO speed_limit(name, speed, tunnel_id, tunnel_name, created_time, updated_time, status)
+		VALUES(?, ?, NULL, NULL, ?, NULL, ?)
+	`, "limiter-exists-update-ok-rule", 1024, now, 1).Error; err != nil {
+		t.Fatalf("insert speed limit: %v", err)
+	}
+	speedID := mustLastInsertID(t, r, "limiter-exists-update-ok-rule")
+
+	stopNode := startMockNodeSessionWithCommandFailures(t, server.URL, "limiter-exists-update-ok-secret", map[string]string{
+		"addlimiters": "limiter 8 already exists",
+	})
+	defer stopNode()
+
+	payload := map[string]interface{}{
+		"name":       "limiter-exists-update-ok-forward",
+		"tunnelId":   tunnelID,
+		"remoteAddr": "1.1.1.1:443",
+		"strategy":   "fifo",
+		"speedId":    speedID,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/forward/create", bytes.NewReader(body))
+	req.Header.Set("Authorization", adminToken)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	var out response.R
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if out.Code != 0 {
+		t.Fatalf("expected create success when updater succeeds, got code=%d msg=%s", out.Code, out.Msg)
+	}
+
+	forwardCount := mustQueryInt(t, r, `SELECT COUNT(1) FROM forward WHERE name = ?`, "limiter-exists-update-ok-forward")
+	if forwardCount != 1 {
+		t.Fatalf("expected forward kept when update limiter succeeds, got count=%d", forwardCount)
+	}
+}
+
+func TestForwardCreateRollbackWhenLimiterAlreadyExistsAndUpdateFailsContract(t *testing.T) {
+	secret := "contract-jwt-secret"
+	router, r := setupContractRouter(t, secret)
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	adminToken, err := auth.GenerateToken(1, "admin_user", 0, secret)
+	if err != nil {
+		t.Fatalf("generate admin token: %v", err)
+	}
+
+	now := time.Now().UnixMilli()
+	if err := r.DB().Exec(`
+		INSERT INTO tunnel(name, traffic_ratio, type, protocol, flow, created_time, updated_time, status, in_ip, inx)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, "limiter-exists-update-fail-tunnel", 1.0, 1, "tls", 99999, now, now, 1, nil, 0).Error; err != nil {
+		t.Fatalf("insert tunnel: %v", err)
+	}
+	tunnelID := mustLastInsertID(t, r, "limiter-exists-update-fail-tunnel")
+
+	if err := r.DB().Exec(`
+		INSERT INTO node(name, secret, server_ip, server_ip_v4, server_ip_v6, port, interface_name, version, http, tls, socks, created_time, updated_time, status, tcp_listen_addr, udp_listen_addr, inx)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, "limiter-exists-update-fail-node", "limiter-exists-update-fail-secret", "10.20.2.1", "10.20.2.1", "", "32300-32310", "", "v1", 1, 1, 1, now, now, 1, "[::]", "[::]", 0).Error; err != nil {
+		t.Fatalf("insert node: %v", err)
+	}
+	nodeID := mustLastInsertID(t, r, "limiter-exists-update-fail-node")
+
+	if err := r.DB().Exec(`
+		INSERT INTO chain_tunnel(tunnel_id, chain_type, node_id, port, strategy, inx, protocol)
+		VALUES(?, 1, ?, 32301, 'round', 1, 'tls')
+	`, tunnelID, nodeID).Error; err != nil {
+		t.Fatalf("insert chain_tunnel: %v", err)
+	}
+
+	if err := r.DB().Exec(`
+		INSERT INTO speed_limit(name, speed, tunnel_id, tunnel_name, created_time, updated_time, status)
+		VALUES(?, ?, NULL, NULL, ?, NULL, ?)
+	`, "limiter-exists-update-fail-rule", 1024, now, 1).Error; err != nil {
+		t.Fatalf("insert speed limit: %v", err)
+	}
+	speedID := mustLastInsertID(t, r, "limiter-exists-update-fail-rule")
+
+	stopNode := startMockNodeSessionWithCommandFailures(t, server.URL, "limiter-exists-update-fail-secret", map[string]string{
+		"addlimiters":    "limiter 9 already exists",
+		"updatelimiters": "mock update limiters failed",
+	})
+	defer stopNode()
+
+	payload := map[string]interface{}{
+		"name":       "limiter-exists-update-fail-forward",
+		"tunnelId":   tunnelID,
+		"remoteAddr": "1.1.1.1:443",
+		"strategy":   "fifo",
+		"speedId":    speedID,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/forward/create", bytes.NewReader(body))
+	req.Header.Set("Authorization", adminToken)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	var out response.R
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if out.Code == 0 {
+		t.Fatalf("expected create failure when update limiter fails, got code=0")
+	}
+	if !strings.Contains(out.Msg, "mock update limiters failed") {
+		t.Fatalf("expected update failure message, got %q", out.Msg)
+	}
+
+	forwardCount := mustQueryInt(t, r, `SELECT COUNT(1) FROM forward WHERE name = ?`, "limiter-exists-update-fail-forward")
+	if forwardCount != 0 {
+		t.Fatalf("expected forward rollback delete when update limiter fails, got count=%d", forwardCount)
+	}
+}
+
 func TestForwardCreateRollbackWhenServiceDispatchReturnsAddressInUseContract(t *testing.T) {
 	secret := "contract-jwt-secret"
 	router, r := setupContractRouter(t, secret)

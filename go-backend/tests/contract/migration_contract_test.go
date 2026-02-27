@@ -209,39 +209,24 @@ func TestOpenAPISubStoreContracts(t *testing.T) {
 	})
 }
 
-func TestSpeedLimitTunnelsRouteAlias(t *testing.T) {
+func TestSpeedLimitTunnelsRouteRemoved(t *testing.T) {
 	secret := "contract-jwt-secret"
 	router, _ := setupContractRouter(t, secret)
 
-	t.Run("missing token blocked", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/tunnels", nil)
-		resp := httptest.NewRecorder()
+	token, err := auth.GenerateToken(1, "admin_user", 0, secret)
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
 
-		router.ServeHTTP(resp, req)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/tunnels", nil)
+	req.Header.Set("Authorization", token)
+	resp := httptest.NewRecorder()
 
-		assertCodeMsg(t, resp, 401, "未登录或token已过期")
-	})
+	router.ServeHTTP(resp, req)
 
-	t.Run("admin token receives success envelope", func(t *testing.T) {
-		token, err := auth.GenerateToken(1, "admin_user", 0, secret)
-		if err != nil {
-			t.Fatalf("generate token: %v", err)
-		}
-
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/speed-limit/tunnels", nil)
-		req.Header.Set("Authorization", token)
-		resp := httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		var out response.R
-		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-			t.Fatalf("decode response: %v", err)
-		}
-		if out.Code != 0 {
-			t.Fatalf("expected code 0, got %d (%s)", out.Code, out.Msg)
-		}
-	})
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 after route removal, got %d", resp.Code)
+	}
 }
 
 func TestBackupExportImportRestoreContracts(t *testing.T) {

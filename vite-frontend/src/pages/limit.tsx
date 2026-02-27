@@ -10,7 +10,6 @@ import { SearchBar } from "@/components/search-bar";
 import { Card, CardBody, CardHeader } from "@/shadcn-bridge/heroui/card";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Input } from "@/shadcn-bridge/heroui/input";
-import { Select, SelectItem } from "@/shadcn-bridge/heroui/select";
 import {
   Modal,
   ModalContent,
@@ -24,7 +23,6 @@ import {
   getSpeedLimitList,
   updateSpeedLimit,
   deleteSpeedLimit,
-  getTunnelList,
 } from "@/api";
 import { PageLoadingState } from "@/components/page-state";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
@@ -34,30 +32,20 @@ interface SpeedLimitRule {
   name: string;
   speed: number;
   status: number;
-  tunnelId?: number | null;
-  tunnelName?: string;
   createdTime: string;
   updatedTime: string;
-}
-
-interface Tunnel {
-  id: number;
-  name: string;
 }
 
 interface SpeedLimitForm {
   id?: number;
   name: string;
   speed: number;
-  tunnelId: number | null;
-  tunnelName: string;
   status: number;
 }
 
 export default function LimitPage() {
   const [loading, setLoading] = useState(true);
   const [rules, setRules] = useState<SpeedLimitRule[]>([]);
-  const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [searchKeyword, setSearchKeyword] = useLocalStorageState(
     "limit-search-keyword",
     "",
@@ -69,9 +57,7 @@ export default function LimitPage() {
     const lowerKeyword = searchKeyword.toLowerCase();
 
     return rules.filter(
-      (r) =>
-        (r.name && r.name.toLowerCase().includes(lowerKeyword)) ||
-        (r.tunnelName && r.tunnelName.toLowerCase().includes(lowerKeyword)),
+      (r) => r.name && r.name.toLowerCase().includes(lowerKeyword),
     );
   }, [rules, searchKeyword]);
 
@@ -87,8 +73,6 @@ export default function LimitPage() {
   const [form, setForm] = useState<SpeedLimitForm>({
     name: "",
     speed: 100,
-    tunnelId: null,
-    tunnelName: "",
     status: 1,
   });
 
@@ -103,20 +87,12 @@ export default function LimitPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [rulesRes, tunnelsRes] = await Promise.all([
-        getSpeedLimitList(),
-        getTunnelList(),
-      ]);
+      const rulesRes = await getSpeedLimitList();
 
       if (rulesRes.code === 0) {
         setRules(rulesRes.data || []);
       } else {
         toast.error(rulesRes.msg || "获取限速规则失败");
-      }
-
-      if (tunnelsRes.code === 0) {
-        setTunnels(tunnelsRes.data || []);
-      } else {
       }
     } catch {
       toast.error("加载数据失败");
@@ -139,8 +115,6 @@ export default function LimitPage() {
       newErrors.speed = "请输入有效的速度限制（≥1 Mbps）";
     }
 
-    // tunnelId is optional - speed limits can be created without binding to a tunnel
-
     setErrors(newErrors);
 
     return Object.keys(newErrors).length === 0;
@@ -152,8 +126,6 @@ export default function LimitPage() {
     setForm({
       name: "",
       speed: 100,
-      tunnelId: null,
-      tunnelName: "",
       status: 1,
     });
     setErrors({});
@@ -167,8 +139,6 @@ export default function LimitPage() {
       id: rule.id,
       name: rule.name,
       speed: rule.speed,
-      tunnelId: rule.tunnelId ?? null,
-      tunnelName: rule.tunnelName ?? "",
       status: rule.status,
     });
     setErrors({});
@@ -210,16 +180,21 @@ export default function LimitPage() {
     setSubmitLoading(true);
     try {
       let res: { code: number; msg: string };
+      const payload = {
+        id: form.id,
+        name: form.name,
+        speed: form.speed,
+        status: form.status,
+      };
 
       if (isEdit) {
-        res = await updateSpeedLimit(form);
+        res = await updateSpeedLimit(payload);
       } else {
-        const createData = { ...form };
-
-        delete createData.id;
-        createData.tunnelId = null;
-        createData.tunnelName = "";
-
+        const createData = {
+          name: payload.name,
+          speed: payload.speed,
+          status: payload.status,
+        };
         res = await createSpeedLimit(createData);
       }
 
@@ -247,7 +222,7 @@ export default function LimitPage() {
         <div className="flex-1 max-w-sm flex items-center gap-2">
           <SearchBar
             isVisible={isSearchVisible}
-            placeholder="搜索规则名称或绑定隧道"
+            placeholder="搜索规则名称"
             value={searchKeyword}
             onChange={setSearchKeyword}
             onClose={() => setIsSearchVisible(false)}
@@ -291,20 +266,6 @@ export default function LimitPage() {
                       <Chip color="secondary" size="sm" variant="flat">
                         {rule.speed} Mbps
                       </Chip>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-small text-default-600">
-                        绑定隧道
-                      </span>
-                      {rule.tunnelName ? (
-                        <Chip color="primary" size="sm" variant="flat">
-                          {rule.tunnelName}
-                        </Chip>
-                      ) : (
-                        <span className="text-default-400 text-small">
-                          未绑定
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -432,45 +393,6 @@ export default function LimitPage() {
                       }))
                     }
                   />
-
-                  {isEdit && (
-                    <Select
-                      description="仅编辑时可调整绑定隧道"
-                      errorMessage={errors.tunnelId}
-                      isInvalid={!!errors.tunnelId}
-                      label="绑定隧道"
-                      placeholder="可选择要绑定的隧道（可选）"
-                      selectedKeys={
-                        form.tunnelId ? [form.tunnelId.toString()] : []
-                      }
-                      variant="bordered"
-                      onSelectionChange={(keys) => {
-                        const selectedKey = Array.from(keys)[0] as string;
-
-                        if (selectedKey) {
-                          const selectedTunnel = tunnels.find(
-                            (tunnel) => tunnel.id === parseInt(selectedKey),
-                          );
-
-                          setForm((prev) => ({
-                            ...prev,
-                            tunnelId: parseInt(selectedKey),
-                            tunnelName: selectedTunnel?.name || "",
-                          }));
-                        } else {
-                          setForm((prev) => ({
-                            ...prev,
-                            tunnelId: null,
-                            tunnelName: "",
-                          }));
-                        }
-                      }}
-                    >
-                      {tunnels.map((tunnel) => (
-                        <SelectItem key={tunnel.id}>{tunnel.name}</SelectItem>
-                      ))}
-                    </Select>
-                  )}
                 </div>
               </ModalBody>
               <ModalFooter>
