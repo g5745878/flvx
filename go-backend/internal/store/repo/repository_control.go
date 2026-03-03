@@ -102,7 +102,11 @@ func (r *Repository) ListForwardPorts(forwardID int64) ([]model.ForwardPortRecor
 	}
 	rows := make([]model.ForwardPortRecord, 0, len(ports))
 	for _, p := range ports {
-		rows = append(rows, model.ForwardPortRecord{NodeID: p.NodeID, Port: p.Port})
+		inIP := ""
+		if p.InIP.Valid {
+			inIP = p.InIP.String
+		}
+		rows = append(rows, model.ForwardPortRecord{NodeID: p.NodeID, Port: p.Port, InIP: inIP})
 	}
 	return rows, nil
 }
@@ -176,6 +180,9 @@ func nodeRecordFromModel(n *model.Node) *model.NodeRecord {
 	}
 	if n.ServerIPV6.Valid {
 		rec.ServerIPv6 = strings.TrimSpace(n.ServerIPV6.String)
+	}
+	if n.ExtraIPs.Valid {
+		rec.ExtraIPs = strings.TrimSpace(n.ExtraIPs.String)
 	}
 	if n.InterfaceName.Valid {
 		rec.InterfaceName = strings.TrimSpace(n.InterfaceName.String)
@@ -289,10 +296,11 @@ func (r *Repository) ListChainNodesForTunnel(tunnelID int64) ([]model.ChainNodeR
 		Name      sql.NullString
 		Protocol  sql.NullString
 		Strategy  sql.NullString
+		ConnectIP sql.NullString
 	}
 	var rows []row
 	err := r.db.Model(&model.ChainTunnel{}).
-		Select("chain_tunnel.chain_type, chain_tunnel.inx, chain_tunnel.node_id, chain_tunnel.port, node.name, chain_tunnel.protocol, chain_tunnel.strategy").
+		Select("chain_tunnel.chain_type, chain_tunnel.inx, chain_tunnel.node_id, chain_tunnel.port, node.name, chain_tunnel.protocol, chain_tunnel.strategy, chain_tunnel.connect_ip").
 		Joins("LEFT JOIN node ON node.id = chain_tunnel.node_id").
 		Where("chain_tunnel.tunnel_id = ?", tunnelID).
 		Order("chain_tunnel.chain_type ASC, chain_tunnel.inx ASC, chain_tunnel.id ASC").
@@ -336,6 +344,9 @@ func (r *Repository) ListChainNodesForTunnel(tunnelID int64) ([]model.ChainNodeR
 			item.Strategy = "round"
 		} else {
 			item.Strategy = row.Strategy.String
+		}
+		if row.ConnectIP.Valid {
+			item.ConnectIP = row.ConnectIP.String
 		}
 		result = append(result, item)
 	}

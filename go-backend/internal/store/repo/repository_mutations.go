@@ -196,7 +196,7 @@ func (r *Repository) GetUserDefaultsForTunnel(userID int64) (flow int64, num int
 	return user.Flow, user.Num, user.ExpTime, user.FlowResetTime, nil
 }
 
-func (r *Repository) CreateNode(name, secret, serverIP string, serverIPV4, serverIPV6, port, interfaceName, version interface{}, httpFlag, tlsFlag, socksFlag int, now int64, status int, tcpAddr, udpAddr string, inx, isRemote int, remoteURL, remoteToken, remoteConfig interface{}) error {
+func (r *Repository) CreateNode(name, secret, serverIP string, serverIPV4, serverIPV6, port, interfaceName, version interface{}, httpFlag, tlsFlag, socksFlag int, now int64, status int, tcpAddr, udpAddr string, inx, isRemote int, remoteURL, remoteToken, remoteConfig, extraIPs interface{}) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
 	}
@@ -206,6 +206,7 @@ func (r *Repository) CreateNode(name, secret, serverIP string, serverIPV4, serve
 		ServerIP:      serverIP,
 		ServerIPV4:    nullStringFromInterface(serverIPV4),
 		ServerIPV6:    nullStringFromInterface(serverIPV6),
+		ExtraIPs:      nullStringFromInterface(extraIPs),
 		Port:          stringFromInterface(port),
 		InterfaceName: nullStringFromInterface(interfaceName),
 		Version:       nullStringFromInterface(version),
@@ -238,7 +239,7 @@ func (r *Repository) GetNodeStatusFields(nodeID int64) (status, httpFlag, tlsFla
 	return node.Status, node.HTTP, node.TLS, node.Socks, nil
 }
 
-func (r *Repository) UpdateNode(id int64, name, serverIP string, serverIPV4, serverIPV6, port, interfaceName interface{}, httpFlag, tlsFlag, socksFlag int, tcpAddr, udpAddr string, now int64) error {
+func (r *Repository) UpdateNode(id int64, name, serverIP string, serverIPV4, serverIPV6, port, interfaceName, extraIPs interface{}, httpFlag, tlsFlag, socksFlag int, tcpAddr, udpAddr string, now int64) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
 	}
@@ -249,6 +250,7 @@ func (r *Repository) UpdateNode(id int64, name, serverIP string, serverIPV4, ser
 			"server_ip":       serverIP,
 			"server_ip_v4":    nullStringFromInterface(serverIPV4),
 			"server_ip_v6":    nullStringFromInterface(serverIPV6),
+			"extra_ips":       nullStringFromInterface(extraIPs),
 			"port":            stringFromInterface(port),
 			"interface_name":  nullStringFromInterface(interfaceName),
 			"http":            httpFlag,
@@ -395,7 +397,7 @@ func (r *Repository) DeleteChainTunnelsByTunnelTx(tx *gorm.DB, tunnelID int64) e
 	return tx.Where("tunnel_id = ?", tunnelID).Delete(&model.ChainTunnel{}).Error
 }
 
-func (r *Repository) CreateChainTunnelTx(tx *gorm.DB, tunnelID int64, chainType string, nodeID int64, port sql.NullInt64, strategy string, inx int, protocol string) error {
+func (r *Repository) CreateChainTunnelTx(tx *gorm.DB, tunnelID int64, chainType string, nodeID int64, port sql.NullInt64, strategy string, inx int, protocol string, connectIp string) error {
 	if tx == nil {
 		return errors.New("database unavailable")
 	}
@@ -407,6 +409,7 @@ func (r *Repository) CreateChainTunnelTx(tx *gorm.DB, tunnelID int64, chainType 
 		Strategy:  nullStringFromInterface(strategy),
 		Inx:       nullInt64FromInterface(inx),
 		Protocol:  nullStringFromInterface(protocol),
+		ConnectIP: sql.NullString{String: connectIp, Valid: connectIp != ""},
 	}
 	return tx.Create(&ct).Error
 }
@@ -692,6 +695,7 @@ func (r *Repository) DeleteForwardCascade(forwardID int64) error {
 func (r *Repository) ReplaceForwardPorts(forwardID int64, entries []struct {
 	NodeID int64
 	Port   int
+	InIP   string
 }) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
@@ -705,7 +709,12 @@ func (r *Repository) ReplaceForwardPorts(forwardID int64, entries []struct {
 		}
 		rows := make([]model.ForwardPort, 0, len(entries))
 		for _, e := range entries {
-			rows = append(rows, model.ForwardPort{ForwardID: forwardID, NodeID: e.NodeID, Port: e.Port})
+			rows = append(rows, model.ForwardPort{
+				ForwardID: forwardID,
+				NodeID:    e.NodeID,
+				Port:      e.Port,
+				InIP:      sql.NullString{String: e.InIP, Valid: e.InIP != ""},
+			})
 		}
 		return tx.Create(&rows).Error
 	})
@@ -1168,7 +1177,7 @@ func (r *Repository) EnsureUserTunnelGrant(userID, tunnelID int64) (int64, bool,
 	return ut.ID, true, nil
 }
 
-func (r *Repository) CreateForwardTx(userID int64, userName, name string, tunnelID int64, remoteAddr, strategy string, now int64, inx int, entryNodeIDs []int64, port int, speedID interface{}) (int64, error) {
+func (r *Repository) CreateForwardTx(userID int64, userName, name string, tunnelID int64, remoteAddr, strategy string, now int64, inx int, entryNodeIDs []int64, port int, inIp string, speedID interface{}) (int64, error) {
 	if r == nil || r.db == nil {
 		return 0, errors.New("repository not initialized")
 	}
@@ -1198,6 +1207,7 @@ func (r *Repository) CreateForwardTx(userID int64, userName, name string, tunnel
 				ForwardID: forwardID,
 				NodeID:    nodeID,
 				Port:      port,
+				InIP:      sql.NullString{String: inIp, Valid: inIp != ""},
 			}
 			if err := tx.Create(&fp).Error; err != nil {
 				return err

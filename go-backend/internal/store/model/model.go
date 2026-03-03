@@ -48,10 +48,11 @@ type Forward struct {
 func (Forward) TableName() string { return "forward" }
 
 type ForwardPort struct {
-	ID        int64 `gorm:"primaryKey;autoIncrement"`
-	ForwardID int64 `gorm:"column:forward_id;not null"`
-	NodeID    int64 `gorm:"column:node_id;not null"`
-	Port      int   `gorm:"not null"`
+	ID        int64          `gorm:"primaryKey;autoIncrement"`
+	ForwardID int64          `gorm:"column:forward_id;not null"`
+	NodeID    int64          `gorm:"column:node_id;not null"`
+	Port      int            `gorm:"not null"`
+	InIP      sql.NullString `gorm:"column:in_ip;type:text"`
 }
 
 func (ForwardPort) TableName() string { return "forward_port" }
@@ -63,6 +64,7 @@ type Node struct {
 	ServerIP      string         `gorm:"column:server_ip;type:varchar(100);not null"`
 	ServerIPV4    sql.NullString `gorm:"column:server_ip_v4;type:varchar(100)"`
 	ServerIPV6    sql.NullString `gorm:"column:server_ip_v6;type:varchar(100)"`
+	ExtraIPs      sql.NullString `gorm:"column:extra_ips;type:text"`
 	Port          string         `gorm:"type:text;not null"`
 	InterfaceName sql.NullString `gorm:"column:interface_name;type:varchar(200)"`
 	Version       sql.NullString `gorm:"type:varchar(100)"`
@@ -133,6 +135,7 @@ type ChainTunnel struct {
 	Strategy  sql.NullString `gorm:"type:varchar(10)"`
 	Inx       sql.NullInt64  `gorm:"column:inx"`
 	Protocol  sql.NullString `gorm:"type:varchar(10)"`
+	ConnectIP sql.NullString `gorm:"column:connect_ip;type:varchar(45)"`
 }
 
 func (ChainTunnel) TableName() string { return "chain_tunnel" }
@@ -337,6 +340,7 @@ type NodeBackup struct {
 	ServerIP      string `json:"serverIp"`
 	ServerIPv4    string `json:"serverIpV4,omitempty"`
 	ServerIPv6    string `json:"serverIpV6,omitempty"`
+	ExtraIPs      string `json:"extraIPs,omitempty"`
 	Port          string `json:"port"`
 	InterfaceName string `json:"interfaceName,omitempty"`
 	Version       string `json:"version,omitempty"`
@@ -510,6 +514,7 @@ type TunnelRecord struct {
 type ForwardPortRecord struct {
 	NodeID int64
 	Port   int
+	InIP   string
 }
 
 // NodeRecord is a node view used by control plane.
@@ -519,6 +524,7 @@ type NodeRecord struct {
 	ServerIP      string
 	ServerIPv4    string
 	ServerIPv6    string
+	ExtraIPs      string
 	Status        int
 	PortRange     string
 	TCPListenAddr string
@@ -538,6 +544,7 @@ type ChainNodeRecord struct {
 	NodeName  string
 	Protocol  string
 	Strategy  string
+	ConnectIP string
 }
 
 type UserTunnelLimiterInfo struct {

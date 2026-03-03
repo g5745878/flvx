@@ -271,6 +271,7 @@ func (h *Handler) nodeCreate(w http.ResponseWriter, r *http.Request) {
 		nullableText(asString(req["remoteUrl"])),
 		nullableText(asString(req["remoteToken"])),
 		nullableText(asString(req["remoteConfig"])),
+		nullableText(asString(req["extraIPs"])),
 	); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
@@ -322,6 +323,7 @@ func (h *Handler) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 		nullableText(asString(req["serverIpV6"])),
 		defaultString(asString(req["port"]), "1000-65535"),
 		nullableText(asString(req["interfaceName"])),
+		nullableText(asString(req["extraIPs"])),
 		newHTTP,
 		newTLS,
 		newSocks,
@@ -1176,7 +1178,8 @@ func (h *Handler) forwardCreate(w http.ResponseWriter, r *http.Request) {
 	if userName == "" {
 		userName = "user"
 	}
-	forwardID, err := h.repo.CreateForwardTx(userID, userName, name, tunnelID, remoteAddr, defaultString(asString(req["strategy"]), "fifo"), now, inx, entryNodes, port, nullableInt(speedID))
+	inIp := strings.TrimSpace(asString(req["inIp"]))
+	forwardID, err := h.repo.CreateForwardTx(userID, userName, name, tunnelID, remoteAddr, defaultString(asString(req["strategy"]), "fifo"), now, inx, entryNodes, port, inIp, nullableInt(speedID))
 	if err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
@@ -1280,6 +1283,7 @@ func (h *Handler) forwardUpdate(w http.ResponseWriter, r *http.Request) {
 			port = h.pickTunnelPort(tunnelID)
 		}
 	}
+	inIp := asString(req["inIp"])
 	fwdEntryNodes, _ := h.tunnelEntryNodeIDs(tunnelID)
 	for _, nodeID := range fwdEntryNodes {
 		node, nodeErr := h.getNodeRecord(nodeID)
@@ -1296,7 +1300,7 @@ func (h *Handler) forwardUpdate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	if err := h.replaceForwardPorts(id, tunnelID, port); err != nil {
+	if err := h.replaceForwardPorts(id, tunnelID, port, inIp); err != nil {
 		h.rollbackForwardMutation(forward, oldPorts)
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
@@ -1628,7 +1632,7 @@ func (h *Handler) forwardBatchChangeTunnel(w http.ResponseWriter, r *http.Reques
 			fail++
 			continue
 		}
-		if err := h.replaceForwardPorts(id, req.TargetTunnelID, p); err != nil {
+		if err := h.replaceForwardPorts(id, req.TargetTunnelID, p, ""); err != nil {
 			h.rollbackForwardMutation(forward, oldPorts)
 			fail++
 			continue
@@ -1954,6 +1958,7 @@ type tunnelRuntimeNode struct {
 	Inx       int
 	ChainType int
 	Port      int
+	ConnectIP string
 }
 
 type tunnelCreateState struct {
@@ -2027,6 +2032,7 @@ func (h *Handler) prepareTunnelCreateState(tx *gorm.DB, req map[string]interface
 				Strategy:  defaultString(asString(item["strategy"]), "round"),
 				ChainType: 3,
 				Port:      port,
+				ConnectIP: asString(item["connectIp"]),
 			})
 		}
 		if len(state.OutNodes) == 0 {
@@ -2062,6 +2068,7 @@ func (h *Handler) prepareTunnelCreateState(tx *gorm.DB, req map[string]interface
 					Inx:       hopIdx + 1,
 					ChainType: 2,
 					Port:      port,
+					ConnectIP: asString(item["connectIp"]),
 				})
 			}
 			if len(hop) > 0 {
@@ -2338,7 +2345,7 @@ func (h *Handler) applyFederationRuntime(state *tunnelCreateState, localDomain s
 					h.releaseFederationRuntimeRefs(releaseRefs)
 					return nil, nil, errors.New("节点不存在")
 				}
-				host, hostErr := selectTunnelDialHost(node, targetNode, state.IPPreference)
+				host, hostErr := selectTunnelDialHost(node, targetNode, state.IPPreference, target.ConnectIP)
 				if hostErr != nil {
 					h.releaseFederationRuntimeRefs(releaseRefs)
 					return nil, nil, hostErr
@@ -2578,7 +2585,7 @@ func buildTunnelChainConfig(tunnelID int64, fromNodeID int64, targets []tunnelRu
 		if targetNode == nil {
 			return nil, errors.New("节点不存在")
 		}
-		host, err := selectTunnelDialHost(fromNode, targetNode, ipPreference)
+		host, err := selectTunnelDialHost(fromNode, targetNode, ipPreference, target.ConnectIP)
 		if err != nil {
 			return nil, err
 		}
@@ -2651,9 +2658,12 @@ func buildTunnelChainServiceConfig(tunnelID int64, chainNode tunnelRuntimeNode, 
 	return []map[string]interface{}{service}
 }
 
-func selectTunnelDialHost(fromNode, toNode *nodeRecord, ipPreference string) (string, error) {
+func selectTunnelDialHost(fromNode, toNode *nodeRecord, ipPreference string, connectIp string) (string, error) {
 	if fromNode == nil || toNode == nil {
 		return "", errors.New("节点不存在")
+	}
+	if strings.TrimSpace(connectIp) != "" {
+		return strings.TrimSpace(connectIp), nil
 	}
 	fromV4 := nodeSupportsV4(fromNode)
 	fromV6 := nodeSupportsV6(fromNode)
@@ -2789,6 +2799,7 @@ func (h *Handler) replaceTunnelChainsTx(tx *gorm.DB, tunnelID int64, req map[str
 			defaultString(asString(n["strategy"]), "round"),
 			i+1,
 			defaultString(asString(n["protocol"]), "tls"),
+			"",
 		); err != nil {
 			return err
 		}
@@ -2806,6 +2817,7 @@ func (h *Handler) replaceTunnelChainsTx(tx *gorm.DB, tunnelID int64, req map[str
 				return pickErr
 			}
 		}
+		connectIp := asString(n["connectIp"])
 		if err := h.repo.CreateChainTunnelTx(
 			tx,
 			tunnelID,
@@ -2815,6 +2827,7 @@ func (h *Handler) replaceTunnelChainsTx(tx *gorm.DB, tunnelID int64, req map[str
 			defaultString(asString(n["strategy"]), "round"),
 			i+1,
 			defaultString(asString(n["protocol"]), "tls"),
+			connectIp,
 		); err != nil {
 			return err
 		}
@@ -2834,6 +2847,7 @@ func (h *Handler) replaceTunnelChainsTx(tx *gorm.DB, tunnelID int64, req map[str
 					return pickErr
 				}
 			}
+			connectIp := asString(n["connectIp"])
 			if err := h.repo.CreateChainTunnelTx(
 				tx,
 				tunnelID,
@@ -2843,6 +2857,7 @@ func (h *Handler) replaceTunnelChainsTx(tx *gorm.DB, tunnelID int64, req map[str
 				defaultString(asString(n["strategy"]), "round"),
 				i+1,
 				defaultString(asString(n["protocol"]), "tls"),
+				connectIp,
 			); err != nil {
 				return err
 			}
@@ -2999,7 +3014,7 @@ func parsePorts(portRange string) ([]int, error) {
 	return ports, nil
 }
 
-func (h *Handler) replaceForwardPorts(forwardID, tunnelID int64, port int) error {
+func (h *Handler) replaceForwardPorts(forwardID, tunnelID int64, port int, inIp string) error {
 	entryNodes, err := h.tunnelEntryNodeIDs(tunnelID)
 	if err != nil {
 		return err
@@ -3007,12 +3022,14 @@ func (h *Handler) replaceForwardPorts(forwardID, tunnelID int64, port int) error
 	entries := make([]struct {
 		NodeID int64
 		Port   int
+		InIP   string
 	}, len(entryNodes))
 	for i, nid := range entryNodes {
 		entries[i] = struct {
 			NodeID int64
 			Port   int
-		}{NodeID: nid, Port: port}
+			InIP   string
+		}{NodeID: nid, Port: port, InIP: inIp}
 	}
 	return h.repo.ReplaceForwardPorts(forwardID, entries)
 }
@@ -3021,12 +3038,14 @@ func (h *Handler) replaceForwardPortsWithRecords(forwardID int64, ports []forwar
 	entries := make([]struct {
 		NodeID int64
 		Port   int
+		InIP   string
 	}, len(ports))
 	for i, fp := range ports {
 		entries[i] = struct {
 			NodeID int64
 			Port   int
-		}{NodeID: fp.NodeID, Port: fp.Port}
+			InIP   string
+		}{NodeID: fp.NodeID, Port: fp.Port, InIP: fp.InIP}
 	}
 	return h.repo.ReplaceForwardPorts(forwardID, entries)
 }

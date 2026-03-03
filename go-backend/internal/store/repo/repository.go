@@ -637,6 +637,7 @@ func (r *Repository) ListNodes() ([]map[string]interface{}, error) {
 			"ip": n.ServerIP, "serverIp": n.ServerIP,
 			"serverIpV4":    nullableString(n.ServerIPV4),
 			"serverIpV6":    nullableString(n.ServerIPV6),
+			"extraIPs":      nullableString(n.ExtraIPs),
 			"port":          n.Port,
 			"tcpListenAddr": n.TCPListenAddr,
 			"udpListenAddr": n.UDPListenAddr,
@@ -863,6 +864,9 @@ func (r *Repository) ListTunnels() ([]map[string]interface{}, error) {
 		}
 		if c.Strategy.Valid {
 			nodeObj["strategy"] = c.Strategy.String
+		}
+		if c.ConnectIP.Valid {
+			nodeObj["connectIp"] = c.ConnectIP.String
 		}
 
 		switch chainTypeInt {
@@ -2731,10 +2735,11 @@ func resolveForwardIngress(db *gorm.DB, forwardID int64, tunnelID int64) (string
 	type fpRow struct {
 		Port     sql.NullInt64
 		ServerIP sql.NullString
+		InIP     sql.NullString
 	}
 	var fpRows []fpRow
 	err := db.Model(&model.ForwardPort{}).
-		Select("forward_port.port, node.server_ip").
+		Select("forward_port.port, node.server_ip, forward_port.in_ip").
 		Joins("LEFT JOIN node ON node.id = forward_port.node_id").
 		Where("forward_port.forward_id = ?", forwardID).
 		Order("forward_port.id ASC").
@@ -2744,9 +2749,21 @@ func resolveForwardIngress(db *gorm.DB, forwardID int64, tunnelID int64) (string
 	}
 
 	ports := make([]int64, 0)
-	nodePairs := make([]string, 0)
+	entries := make([]string, 0)
 	seenPorts := make(map[int64]struct{})
 	seenPairs := make(map[string]struct{})
+
+	var tunnelFirstIP string
+	if tunnelInIP.Valid && strings.TrimSpace(tunnelInIP.String) != "" {
+		tunnelIPs := strings.Split(tunnelInIP.String, ",")
+		for _, ip := range tunnelIPs {
+			ip = strings.TrimSpace(ip)
+			if ip != "" {
+				tunnelFirstIP = ip
+				break
+			}
+		}
+	}
 
 	for _, row := range fpRows {
 		if !row.Port.Valid {
@@ -2756,11 +2773,21 @@ func resolveForwardIngress(db *gorm.DB, forwardID int64, tunnelID int64) (string
 			seenPorts[row.Port.Int64] = struct{}{}
 			ports = append(ports, row.Port.Int64)
 		}
-		if row.ServerIP.Valid && strings.TrimSpace(row.ServerIP.String) != "" {
-			pair := fmt.Sprintf("%s:%d", strings.TrimSpace(row.ServerIP.String), row.Port.Int64)
+
+		var ip string
+		if row.InIP.Valid && strings.TrimSpace(row.InIP.String) != "" {
+			ip = strings.TrimSpace(row.InIP.String)
+		} else if tunnelFirstIP != "" {
+			ip = tunnelFirstIP
+		} else if row.ServerIP.Valid && strings.TrimSpace(row.ServerIP.String) != "" {
+			ip = strings.TrimSpace(row.ServerIP.String)
+		}
+
+		if ip != "" {
+			pair := fmt.Sprintf("%s:%d", ip, row.Port.Int64)
 			if _, ok := seenPairs[pair]; !ok {
 				seenPairs[pair] = struct{}{}
-				nodePairs = append(nodePairs, pair)
+				entries = append(entries, pair)
 			}
 		}
 	}
@@ -2770,27 +2797,6 @@ func resolveForwardIngress(db *gorm.DB, forwardID int64, tunnelID int64) (string
 	}
 
 	inPort := sql.NullInt64{Int64: ports[0], Valid: true}
-
-	entries := make([]string, 0)
-	if tunnelInIP.Valid && strings.TrimSpace(tunnelInIP.String) != "" {
-		tunnelIPs := strings.Split(tunnelInIP.String, ",")
-		seen := make(map[string]struct{})
-		for _, ip := range tunnelIPs {
-			ip = strings.TrimSpace(ip)
-			if ip == "" {
-				continue
-			}
-			if _, ok := seen[ip]; ok {
-				continue
-			}
-			seen[ip] = struct{}{}
-			for _, port := range ports {
-				entries = append(entries, fmt.Sprintf("%s:%d", ip, port))
-			}
-		}
-	} else {
-		entries = append(entries, nodePairs...)
-	}
 
 	return strings.Join(entries, ","), inPort, nil
 }

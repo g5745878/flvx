@@ -70,6 +70,7 @@ interface ChainTunnel {
   strategy?: string; // 'fifo' | 'round' | 'rand' - 仅转发链需要
   chainType?: number; // 1: 入口, 2: 转发链, 3: 出口
   inx?: number; // 转发链序号
+  connectIp?: string; // 连接IP（多IP节点指定连接地址）
 }
 
 interface Tunnel {
@@ -94,6 +95,10 @@ interface Node {
   id: number;
   name: string;
   status: number; // 1: 在线, 0: 离线
+  serverIp?: string;
+  serverIpV4?: string;
+  serverIpV6?: string;
+  extraIPs?: string;
 }
 
 interface TunnelForm {
@@ -142,6 +147,46 @@ export default function TunnelPage() {
     timedOut: false,
   });
   const diagnosisAbortRef = useRef<AbortController | null>(null);
+
+  const getNodeIpOptions = (nodeId: number): string[] => {
+    const node = nodes.find((item) => item.id === nodeId);
+
+    if (!node) {
+      return [];
+    }
+
+    const values: string[] = [];
+    const push = (value?: string) => {
+      const trimmed = (value || "").trim();
+
+      if (trimmed) {
+        values.push(trimmed);
+      }
+    };
+
+    push(node.serverIpV4);
+    push(node.serverIpV6);
+    push(node.serverIp);
+
+    (node.extraIPs || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter((v) => v)
+      .forEach((v) => values.push(v));
+
+    return Array.from(new Set(values));
+  };
+
+  const getCommonIpOptions = (nodeIds: number[]): string[] => {
+    if (nodeIds.length === 0) {
+      return [];
+    }
+
+    const optionSets = nodeIds.map((nodeId) => new Set(getNodeIpOptions(nodeId)));
+    const base = optionSets[0];
+
+    return Array.from(base).filter((ip) => optionSets.every((set) => set.has(ip)));
+  };
 
   // 表单状态
   const [form, setForm] = useState<TunnelForm>(createTunnelFormDefaults());
@@ -337,6 +382,20 @@ export default function TunnelPage() {
       chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map((node) => ({
         ...node,
         strategy,
+      }));
+
+      return { ...prev, chainNodes };
+    });
+  };
+
+  // 更新某一跳的所有节点的连接IP
+  const updateChainConnectIp = (groupIndex: number, connectIp: string) => {
+    setForm((prev) => {
+      const chainNodes = [...(prev.chainNodes || [])];
+
+      chainNodes[groupIndex] = (chainNodes[groupIndex] || []).map((node) => ({
+        ...node,
+        connectIp,
       }));
 
       return { ...prev, chainNodes };
@@ -1530,6 +1589,15 @@ export default function TunnelPage() {
                               groupNodes.length > 0
                                 ? groupNodes[0].strategy || "round"
                                 : "round";
+                            const groupSelectedNodeIds = groupNodes
+                              .filter((ct) => ct.nodeId !== -1)
+                              .map((ct) => ct.nodeId);
+                            const groupIpOptions =
+                              getCommonIpOptions(groupSelectedNodeIds);
+                            const selectedGroupConnectIp =
+                              groupNodes.length > 0
+                                ? groupNodes[0].connectIp || ""
+                                : "";
 
                             return (
                               <div
@@ -1741,6 +1809,47 @@ export default function TunnelPage() {
                                     <SelectItem key="rand">随机</SelectItem>
                                   </Select>
                                 </div>
+
+                                {/* 连接IP - 转发链节点 */}
+                                <Select
+                                  classNames={{
+                                    label: "text-xs",
+                                    value: "text-sm",
+                                  }}
+                                  description="按当前跳所选节点的共有IP进行选择，留空使用默认"
+                                  isDisabled={
+                                    groupSelectedNodeIds.length === 0 ||
+                                    groupIpOptions.length === 0
+                                  }
+                                  label="连接IP"
+                                  placeholder={
+                                    groupSelectedNodeIds.length === 0
+                                      ? "请先选择节点"
+                                      : groupIpOptions.length > 0
+                                        ? "选择连接IP"
+                                        : "所选节点无共同可选IP"
+                                  }
+                                  selectedKeys={[
+                                    selectedGroupConnectIp || "__default__",
+                                  ]}
+                                  size="sm"
+                                  variant="bordered"
+                                  onSelectionChange={(keys) => {
+                                    const selectedKey = Array.from(keys)[0] as string;
+
+                                    updateChainConnectIp(
+                                      groupIndex,
+                                      selectedKey === "__default__"
+                                        ? ""
+                                        : selectedKey,
+                                    );
+                                  }}
+                                >
+                                  <SelectItem key="__default__">默认连接IP</SelectItem>
+                                  {groupIpOptions.map((ip) => (
+                                    <SelectItem key={ip}>{ip}</SelectItem>
+                                  ))}
+                                </Select>
                               </div>
                             );
                           })}
@@ -2002,6 +2111,82 @@ export default function TunnelPage() {
                           <SelectItem key="rand">随机</SelectItem>
                         </Select>
                       </div>
+
+                      {/* 连接IP - 出口节点 */}
+                      <Select
+                        classNames={{
+                          label: "text-xs",
+                          value: "text-sm",
+                        }}
+                        description="按出口节点共同可用IP选择，留空使用默认"
+                        isDisabled={
+                          (form.outNodeId || []).filter((ct) => ct.nodeId !== -1)
+                            .length === 0 ||
+                          getCommonIpOptions(
+                            (form.outNodeId || [])
+                              .filter((ct) => ct.nodeId !== -1)
+                              .map((ct) => ct.nodeId),
+                          ).length === 0
+                        }
+                        label="连接IP"
+                        placeholder={
+                          (form.outNodeId || []).filter((ct) => ct.nodeId !== -1)
+                            .length === 0
+                            ? "请先选择出口节点"
+                            : getCommonIpOptions(
+                                  (form.outNodeId || [])
+                                    .filter((ct) => ct.nodeId !== -1)
+                                    .map((ct) => ct.nodeId),
+                                ).length > 0
+                              ? "选择连接IP"
+                              : "所选节点无共同可选IP"
+                        }
+                        selectedKeys={[
+                          form.outNodeId && form.outNodeId.length > 0
+                            ? form.outNodeId[0].connectIp || "__default__"
+                            : "__default__",
+                        ]}
+                        size="sm"
+                        variant="bordered"
+                        onSelectionChange={(keys) => {
+                          const selectedKey = Array.from(keys)[0] as string;
+                          const value =
+                            selectedKey === "__default__" ? "" : selectedKey;
+                          setForm((prev) => {
+                            const currentOutNodes = prev.outNodeId || [];
+                            if (currentOutNodes.length === 0) {
+                              return {
+                                ...prev,
+                                outNodeId: [
+                                  {
+                                    nodeId: -1,
+                                    chainType: 3,
+                                    protocol: "tls",
+                                    strategy: "round",
+                                    connectIp: value,
+                                  },
+                                ],
+                              };
+                            }
+                            return {
+                              ...prev,
+                              outNodeId: currentOutNodes.map((ct) => ({
+                                ...ct,
+                                connectIp: value,
+                              })),
+                            };
+                          });
+                        }}
+                      >
+                        <SelectItem key="__default__">默认连接IP</SelectItem>
+                        {getCommonIpOptions(
+                          (form.outNodeId || [])
+                            .filter((ct) => ct.nodeId !== -1)
+                            .map((ct) => ct.nodeId),
+                        ).map((ip) => (
+                          <SelectItem key={ip}>{ip}</SelectItem>
+                        ))}
+                      </Select>
                     </>
                   )}
                 </div>

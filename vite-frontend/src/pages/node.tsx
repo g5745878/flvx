@@ -76,6 +76,7 @@ interface Node {
   port: string;
   tcpListenAddr?: string;
   udpListenAddr?: string;
+  extraIPs?: string;
   version?: string;
   http?: number; // 0 关 1 开
   tls?: number; // 0 关 1 开
@@ -99,7 +100,7 @@ interface Node {
   rollbackLoading?: boolean;
 }
 
-interface NodeForm {
+  interface NodeForm {
   id: number | null;
   name: string;
   serverHost: string;
@@ -109,6 +110,7 @@ interface NodeForm {
   tcpListenAddr: string;
   udpListenAddr: string;
   interfaceName: string;
+  extraIPs: string;
   http: number; // 0 关 1 开
   tls: number; // 0 关 1 开
   socks: number; // 0 关 1 开
@@ -183,6 +185,7 @@ export default function NodePage() {
     tcpListenAddr: "[::]",
     udpListenAddr: "[::]",
     interfaceName: "",
+    extraIPs: "",
     http: 0,
     tls: 0,
     socks: 0,
@@ -590,6 +593,7 @@ export default function NodePage() {
       tcpListenAddr: node.tcpListenAddr || "[::]",
       udpListenAddr: node.udpListenAddr || "[::]",
       interfaceName: (node as any).interfaceName || "",
+      extraIPs: node.extraIPs || "",
       http: typeof node.http === "number" ? node.http : 1,
       tls: typeof node.tls === "number" ? node.tls : 1,
       socks: typeof node.socks === "number" ? node.socks : 1,
@@ -817,6 +821,7 @@ export default function NodePage() {
       const { serverHost, ...rest } = form;
       const data = {
         ...rest,
+        extraIPs: form.extraIPs,
         serverIp:
           form.serverIpV4?.trim() ||
           form.serverIpV6?.trim() ||
@@ -880,6 +885,7 @@ export default function NodePage() {
       tcpListenAddr: "[::]",
       udpListenAddr: "[::]",
       interfaceName: "",
+      extraIPs: "",
       http: 0,
       tls: 0,
       socks: 0,
@@ -1634,6 +1640,17 @@ export default function NodePage() {
                           ...prev,
                           interfaceName: e.target.value,
                         }))
+                      }
+                    />
+
+                    <Input
+                      description="多IP服务器可填写额外IP地址，逗号分隔"
+                      label="额外IP地址"
+                      placeholder="例如: 192.168.1.100, 10.0.0.5"
+                      value={form.extraIPs}
+                      variant="bordered"
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, extraIPs: e.target.value }))
                       }
                     />
 

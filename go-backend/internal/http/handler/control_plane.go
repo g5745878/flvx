@@ -72,7 +72,7 @@ func (h *Handler) buildDiagnosisStreamStartItems(workItems []diagnosisWorkItem) 
 			fromNode, _ := h.cachedNode(nodeCache, workItem.fromNodeID)
 			targetNode, err := h.cachedNode(nodeCache, workItem.toNode.NodeID)
 			if err == nil {
-				resolvedIP, resolvedPort, resolveErr := resolveChainProbeTarget(fromNode, targetNode, workItem.toNode.Port, workItem.ipPreference)
+				resolvedIP, resolvedPort, resolveErr := resolveChainProbeTarget(fromNode, targetNode, workItem.toNode.Port, workItem.ipPreference, "")
 				if resolveErr == nil {
 					targetIP = resolvedIP
 					targetPort = resolvedPort
@@ -1099,7 +1099,7 @@ func (h *Handler) appendChainHopDiagnosis(results *[]map[string]interface{}, nod
 		h.appendFailedDiagnosis(results, nodeCache, fromNodeID, "", 0, description, metadata, err.Error())
 		return
 	}
-	targetIP, targetPort, err := resolveChainProbeTarget(fromNode, targetNode, toNode.Port, ipPreference)
+	targetIP, targetPort, err := resolveChainProbeTarget(fromNode, targetNode, toNode.Port, ipPreference, "")
 	if err != nil {
 		h.appendFailedDiagnosis(results, nodeCache, fromNodeID, strings.Trim(strings.TrimSpace(targetNode.ServerIP), "[]"), toNode.Port, description, metadata, err.Error())
 		return
@@ -1107,11 +1107,11 @@ func (h *Handler) appendChainHopDiagnosis(results *[]map[string]interface{}, nod
 	h.appendPathDiagnosis(results, nodeCache, fromNodeID, targetIP, targetPort, description, metadata, options)
 }
 
-func resolveChainProbeTarget(fromNode, targetNode *nodeRecord, preferredPort int, ipPreference string) (string, int, error) {
+func resolveChainProbeTarget(fromNode, targetNode *nodeRecord, preferredPort int, ipPreference string, connectIp string) (string, int, error) {
 	if targetNode == nil {
 		return "", 0, errors.New("目标节点不存在")
 	}
-	host, err := selectTunnelDialHost(fromNode, targetNode, ipPreference)
+	host, err := selectTunnelDialHost(fromNode, targetNode, ipPreference, connectIp)
 	if err != nil {
 		host = strings.Trim(strings.TrimSpace(targetNode.ServerIP), "[]")
 	}
