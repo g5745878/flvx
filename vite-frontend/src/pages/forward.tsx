@@ -2505,6 +2505,10 @@ export default function ForwardPage() {
       return;
     }
 
+    if (forwards.length === 0) {
+      return;
+    }
+
     if (!isSameGroupOrderMap(groupOrderMap, sanitizedGroupOrderMap)) {
       setGroupOrderMap(sanitizedGroupOrderMap);
       persistGroupOrderToLocal(sanitizedGroupOrderMap);
@@ -2524,6 +2528,7 @@ export default function ForwardPage() {
   }, [
     groupPreferenceHydrated,
     tokenUserId,
+    forwards,
     groupOrderMap,
     sanitizedGroupOrderMap,
     collapsedTunnelGroups,
