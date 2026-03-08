@@ -3,6 +3,7 @@ package repo
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	gsqlite "github.com/glebarez/sqlite"
@@ -248,5 +249,117 @@ func TestMigrateSchemaClearsSpeedLimitTunnelBinding(t *testing.T) {
 	}
 	if schemaVersion != currentSchemaVersion {
 		t.Fatalf("expected schema version %d, got %d", currentSchemaVersion, schemaVersion)
+	}
+}
+
+func TestMigrateSchemaRunsTrafficInt64MigrationForLegacySchema(t *testing.T) {
+	db, err := gorm.Open(gsqlite.Open(":memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() {
+		sqlDB, _ := db.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL DEFAULT 0)`).Error; err != nil {
+		t.Fatalf("create schema_version: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO schema_version(version) VALUES(?)`, 4).Error; err != nil {
+		t.Fatalf("seed schema_version: %v", err)
+	}
+
+	originalIDRepair := ensurePostgresIDDefaultsFn
+	ensurePostgresIDDefaultsFn = func(db *gorm.DB) error {
+		return nil
+	}
+	t.Cleanup(func() {
+		ensurePostgresIDDefaultsFn = originalIDRepair
+	})
+
+	called := 0
+	originalMigrate := migratePostgresTrafficInt64ColumnsFn
+	migratePostgresTrafficInt64ColumnsFn = func(db *gorm.DB) error {
+		called++
+		return nil
+	}
+	t.Cleanup(func() {
+		migratePostgresTrafficInt64ColumnsFn = originalMigrate
+	})
+
+	if err := migrateSchema(db); err != nil {
+		t.Fatalf("migrateSchema: %v", err)
+	}
+
+	if called != 1 {
+		t.Fatalf("expected traffic bigint migration to run once, got %d", called)
+	}
+
+	var schemaVersion int
+	if err := db.Raw(`SELECT version FROM schema_version LIMIT 1`).Row().Scan(&schemaVersion); err != nil {
+		t.Fatalf("query schema_version: %v", err)
+	}
+	if schemaVersion != currentSchemaVersion {
+		t.Fatalf("expected schema version %d, got %d", currentSchemaVersion, schemaVersion)
+	}
+}
+
+func TestMigrateSchemaReturnsTrafficInt64MigrationError(t *testing.T) {
+	db, err := gorm.Open(gsqlite.Open(":memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() {
+		sqlDB, _ := db.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL DEFAULT 0)`).Error; err != nil {
+		t.Fatalf("create schema_version: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO schema_version(version) VALUES(?)`, 4).Error; err != nil {
+		t.Fatalf("seed schema_version: %v", err)
+	}
+
+	originalIDRepair := ensurePostgresIDDefaultsFn
+	ensurePostgresIDDefaultsFn = func(db *gorm.DB) error {
+		return nil
+	}
+	t.Cleanup(func() {
+		ensurePostgresIDDefaultsFn = originalIDRepair
+	})
+
+	wantErr := errors.New("traffic bigint migration failed")
+	originalMigrate := migratePostgresTrafficInt64ColumnsFn
+	migratePostgresTrafficInt64ColumnsFn = func(db *gorm.DB) error {
+		return wantErr
+	}
+	t.Cleanup(func() {
+		migratePostgresTrafficInt64ColumnsFn = originalMigrate
+	})
+
+	err = migrateSchema(db)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected error %v, got %v", wantErr, err)
+	}
+}
+
+func TestAlterPostgresColumnToBigIntIfNeededValidatesNames(t *testing.T) {
+	if err := alterPostgresColumnToBigIntIfNeeded(nil, "peer_share", "max_bandwidth"); err == nil || !strings.Contains(err.Error(), "nil db") {
+		t.Fatalf("expected nil db error, got %v", err)
+	}
+	if err := alterPostgresColumnToBigIntIfNeeded(&gorm.DB{}, "", "max_bandwidth"); err == nil || !strings.Contains(err.Error(), "empty table or column name") {
+		t.Fatalf("expected empty name error, got %v", err)
+	}
+	if err := alterPostgresColumnToBigIntIfNeeded(&gorm.DB{}, "peer_share", ""); err == nil || !strings.Contains(err.Error(), "empty table or column name") {
+		t.Fatalf("expected empty name error, got %v", err)
 	}
 }

@@ -2612,11 +2612,12 @@ func (r *Repository) GetUserTunnelByID(id int64) (*model.UserTunnel, error) {
 
 // ─── Migration ───────────────────────────────────────────────────────
 
-const currentSchemaVersion = 4
+const currentSchemaVersion = 5
 
 var ensurePostgresIDDefaultsFn = ensurePostgresIDDefaults
 var migrateViteConfigValueColumnTypeFn = migrateViteConfigValueColumnType
 var migrateSpeedLimitTunnelBindingFn = migrateSpeedLimitTunnelBinding
+var migratePostgresTrafficInt64ColumnsFn = migratePostgresTrafficInt64Columns
 
 func getSchemaVersion(db *gorm.DB) int {
 	var v model.SchemaVersion
@@ -2680,6 +2681,12 @@ func migrateSchema(db *gorm.DB) error {
 		}
 	}
 
+	if ver < 5 {
+		if err := migratePostgresTrafficInt64ColumnsFn(db); err != nil {
+			return err
+		}
+	}
+
 	setSchemaVersion(db, currentSchemaVersion)
 	return nil
 }
@@ -2739,6 +2746,87 @@ func migrateSpeedLimitTunnelBinding(db *gorm.DB) error {
 			"tunnel_name": nil,
 		}).Error; err != nil {
 		return fmt.Errorf("clear speed_limit tunnel binding: %w", err)
+	}
+
+	return nil
+}
+
+func migratePostgresTrafficInt64Columns(db *gorm.DB) error {
+	if db == nil {
+		return errors.New("nil db")
+	}
+
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+
+	type trafficColumn struct {
+		TableName  string
+		ColumnName string
+	}
+
+	columns := []trafficColumn{
+		{TableName: "user", ColumnName: "flow"},
+		{TableName: "user", ColumnName: "in_flow"},
+		{TableName: "user", ColumnName: "out_flow"},
+		{TableName: "forward", ColumnName: "in_flow"},
+		{TableName: "forward", ColumnName: "out_flow"},
+		{TableName: "statistics_flow", ColumnName: "flow"},
+		{TableName: "statistics_flow", ColumnName: "total_flow"},
+		{TableName: "tunnel", ColumnName: "flow"},
+		{TableName: "user_tunnel", ColumnName: "flow"},
+		{TableName: "user_tunnel", ColumnName: "in_flow"},
+		{TableName: "user_tunnel", ColumnName: "out_flow"},
+		{TableName: "peer_share", ColumnName: "max_bandwidth"},
+		{TableName: "peer_share", ColumnName: "current_flow"},
+	}
+
+	for _, column := range columns {
+		if err := alterPostgresColumnToBigIntIfNeeded(db, column.TableName, column.ColumnName); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func alterPostgresColumnToBigIntIfNeeded(db *gorm.DB, tableName, columnName string) error {
+	if db == nil {
+		return errors.New("nil db")
+	}
+
+	if tableName == "" || columnName == "" {
+		return errors.New("empty table or column name")
+	}
+
+	type columnRow struct {
+		DataType string `gorm:"column:data_type"`
+	}
+
+	var row columnRow
+	if err := db.Raw(
+		`SELECT data_type FROM information_schema.columns
+		 WHERE table_schema = current_schema()
+		   AND table_name = ?
+		   AND column_name = ?`,
+		tableName, columnName,
+	).Scan(&row).Error; err != nil {
+		return fmt.Errorf("inspect %s.%s type: %w", tableName, columnName, err)
+	}
+
+	if row.DataType == "" || strings.EqualFold(row.DataType, "bigint") {
+		return nil
+	}
+	if !strings.EqualFold(row.DataType, "integer") {
+		return nil
+	}
+
+	if err := db.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ALTER COLUMN %s TYPE BIGINT",
+		quoteSQLIdentifier(tableName),
+		quoteSQLIdentifier(columnName),
+	)).Error; err != nil {
+		return fmt.Errorf("alter %s.%s to bigint: %w", tableName, columnName, err)
 	}
 
 	return nil
