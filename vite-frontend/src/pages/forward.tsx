@@ -1,4 +1,4 @@
-import type { SpeedLimitApiItem } from "@/api/types";
+import type { ForwardApiItem, SpeedLimitApiItem } from "@/api/types";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
@@ -104,6 +104,7 @@ interface Forward {
   name: string;
   tunnelId: number;
   tunnelName: string;
+  tunnelTrafficRatio?: number;
   inIp: string;
   inPort: number;
   remoteAddr: string;
@@ -164,6 +165,7 @@ interface ForwardUserGroup {
 interface ForwardTunnelGroup {
   tunnelKey: string;
   tunnelName: string;
+  tunnelTrafficRatio?: number;
   items: Forward[];
 }
 
@@ -243,6 +245,32 @@ const compareForwardTunnelGroupKeyAsc = (a: string, b: string): number => {
   }
 
   return compareForwardTunnelNameAsc(a, b);
+};
+
+const normalizeTunnelTrafficRatio = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return 1;
+};
+
+const formatTunnelTrafficRatio = (value?: number): string => {
+  const ratio = normalizeTunnelTrafficRatio(value);
+
+  if (Number.isInteger(ratio)) {
+    return `${ratio}x`;
+  }
+
+  return `${parseFloat(ratio.toFixed(2))}x`;
 };
 
 const buildForwardGroupOrderLocalKey = (tokenUserId: number): string => {
@@ -504,19 +532,32 @@ const normalizeForwardItems = (items: Forward[]): Forward[] => {
   }));
 };
 
-const mapForwardApiItems = (items: any[]): Forward[] => {
+const mapForwardApiItems = (items: ForwardApiItem[]): Forward[] => {
   return (items || []).map((forward) => ({
-    ...forward,
+    id: forward.id,
+    name: forward.name,
     tunnelId: forward.tunnelId ?? 0,
     tunnelName: forward.tunnelName || "",
+    tunnelTrafficRatio: normalizeTunnelTrafficRatio(
+      forward.tunnelTrafficRatio,
+    ),
     inIp: forward.inIp || "",
     inPort: forward.inPort ?? 0,
     remoteAddr: forward.remoteAddr || "",
-    strategy: forward.strategy || "fifo",
+    strategy: typeof forward.strategy === "string" ? forward.strategy : "fifo",
     status: typeof forward.status === "number" ? forward.status : 0,
     inFlow: forward.inFlow ?? 0,
     outFlow: forward.outFlow ?? 0,
-    createdTime: forward.createdTime || "",
+    createdTime:
+      typeof forward.createdTime === "string" ? forward.createdTime : "",
+    userName:
+      typeof forward.userName === "string" ? forward.userName : undefined,
+    userId: typeof forward.userId === "number" ? forward.userId : undefined,
+    inx: typeof forward.inx === "number" ? forward.inx : undefined,
+    speedId:
+      typeof forward.speedId === "number" || forward.speedId === null
+        ? forward.speedId
+        : undefined,
     serviceRunning: forward.status === 1,
   }));
 };
@@ -2727,6 +2768,9 @@ export default function ForwardPage() {
         existingGroup.tunnelMap.set(tunnelKey, {
           tunnelKey,
           tunnelName,
+          tunnelTrafficRatio: normalizeTunnelTrafficRatio(
+            forward.tunnelTrafficRatio,
+          ),
           items: [forward],
         });
 
@@ -2740,6 +2784,15 @@ export default function ForwardPage() {
         tunnelName !== UNCATEGORIZED_FORWARD_TUNNEL_NAME
       ) {
         existingTunnelGroup.tunnelName = tunnelName;
+      }
+
+      if (
+        normalizeTunnelTrafficRatio(existingTunnelGroup.tunnelTrafficRatio) === 1 &&
+        normalizeTunnelTrafficRatio(forward.tunnelTrafficRatio) !== 1
+      ) {
+        existingTunnelGroup.tunnelTrafficRatio = normalizeTunnelTrafficRatio(
+          forward.tunnelTrafficRatio,
+        );
       }
     });
 
@@ -2917,6 +2970,14 @@ export default function ForwardPage() {
               </svg>
             </Button>
             <span className={titleClassName}>{tunnel.tunnelName}</span>
+            <Chip
+              className="h-5 border-none bg-secondary/15 px-1.5 text-[11px] font-semibold text-secondary-700"
+              color="secondary"
+              size="sm"
+              variant="flat"
+            >
+              {formatTunnelTrafficRatio(tunnel.tunnelTrafficRatio)}
+            </Chip>
           </div>
           <div className="flex items-center gap-2">
             <span className={countClassName}>{tunnel.items.length} 条规则</span>
@@ -3312,6 +3373,9 @@ export default function ForwardPage() {
             <span className="font-medium text-secondary-700">
               {forward.tunnelName}
             </span>
+            <span className="ml-1 text-secondary-600/80">
+              {formatTunnelTrafficRatio(forward.tunnelTrafficRatio)}
+            </span>
           </Chip>
         </TableCell>
         <TableCell className="max-w-[220px]">
@@ -3467,7 +3531,7 @@ export default function ForwardPage() {
                 {forward.name}
               </h3>
               <p className="text-xs text-default-500 truncate">
-                {normalizeForwardTunnelName(forward.tunnelName)}
+                {`${normalizeForwardTunnelName(forward.tunnelName)} · ${formatTunnelTrafficRatio(forward.tunnelTrafficRatio)}`}
               </p>
             </div>
             <div className="flex items-center gap-1.5 ml-2">
