@@ -4,4 +4,4 @@
 - [x] Inspect `processServerAddress` IPv6 handling and confirm the reported issue
 - [x] Implement a fix for IPv6 host-only normalization without introducing regressions
 - [x] Re-run targeted handler tests (and broader go-backend tests if feasible) to verify the fix
-- [ ] Summarize whether the latest-commit-described issue is valid and note any objections
+- [x] Summarize whether the latest-commit-described issue is valid and note any objections
