@@ -293,15 +293,11 @@ jobs:
           cp install.sh ./artifacts/install.sh
           cp panel_install.sh ./artifacts/panel_install.sh
 
-          # 替换仓库地址和版本号
-          sed -i "s|bqlpfy/flux-panel|${REPO}|g" ./artifacts/install.sh
-          sed -i "s|bqlpfy/flux-panel|${REPO}|g" ./artifacts/panel_install.sh
-          sed -i "s|2.0.7-beta|${VERSION}|g" ./artifacts/install.sh
-          sed -i "s|2.0.7-beta|${VERSION}|g" ./artifacts/panel_install.sh
-
-          # 注入固定版本号，使从 Release 页下载的脚本只安装该版本
-          sed -i "s|^PINNED_VERSION=\"\"|PINNED_VERSION=\"${VERSION}\"|" ./artifacts/install.sh
-          sed -i "s|^PINNED_VERSION=\"\"|PINNED_VERSION=\"${VERSION}\"|" ./artifacts/panel_install.sh
+          # 覆盖安装脚本中的仓库地址和固定版本
+          sed -i "s|^REPO=.*|REPO=\"${REPO}\"|" ./artifacts/install.sh
+          sed -i "s|^REPO=.*|REPO=\"${REPO}\"|" ./artifacts/panel_install.sh
+          sed -i "s|^PINNED_VERSION=.*|PINNED_VERSION=\"${VERSION}\"|" ./artifacts/install.sh
+          sed -i "s|^PINNED_VERSION=.*|PINNED_VERSION=\"${VERSION}\"|" ./artifacts/panel_install.sh
 
       - name: Create Release
         env:
@@ -431,4 +427,3 @@ jobs:
           gh release upload "${VERSION}" ./artifacts/gost-arm64.sha256 --clobber
 
           echo "✅ GOST 二进制文件更新完成"
-
