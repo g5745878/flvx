@@ -1621,22 +1621,37 @@ func processServerAddress(serverAddr string) string {
 		return serverAddr
 	}
 
-	idx := strings.LastIndex(serverAddr, ":")
-	if idx < 0 {
-		if looksLikeIPv6(serverAddr) {
-			return "[" + serverAddr + "]"
+	if ip := net.ParseIP(serverAddr); ip != nil && ip.To4() == nil {
+		return "[" + serverAddr + "]"
+	}
+
+	host, port, err := net.SplitHostPort(serverAddr)
+	if err != nil {
+		if idx := strings.LastIndex(serverAddr, ":"); idx > 0 {
+			hostPart := strings.TrimSpace(serverAddr[:idx])
+			portPart := strings.TrimSpace(serverAddr[idx+1:])
+			if hostPart != "" && portPart != "" {
+				if _, perr := strconv.Atoi(portPart); perr == nil {
+					if ip := net.ParseIP(hostPart); ip != nil && ip.To4() == nil {
+						return "[" + hostPart + "]:" + portPart
+					}
+				}
+			}
 		}
 		return serverAddr
 	}
-	host := strings.TrimSpace(serverAddr[:idx])
-	port := strings.TrimSpace(serverAddr[idx+1:])
+
+	host = strings.TrimSpace(host)
+	port = strings.TrimSpace(port)
 	if host == "" || port == "" {
 		return serverAddr
 	}
-	if looksLikeIPv6(host) {
+
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
 		return "[" + host + "]:" + port
 	}
-	return serverAddr
+
+	return host + ":" + port
 }
 
 func normalizeServerAddressInput(serverAddr string) string {
@@ -1658,10 +1673,6 @@ func normalizeServerAddressInput(serverAddr string) string {
 		serverAddr = serverAddr[:idx]
 	}
 	return strings.TrimSpace(serverAddr)
-}
-
-func looksLikeIPv6(address string) bool {
-	return strings.Count(address, ":") >= 2
 }
 
 func asBool(v interface{}, def bool) bool {
