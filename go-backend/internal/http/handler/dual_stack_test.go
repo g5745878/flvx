@@ -69,6 +69,34 @@ func TestBuildTunnelChainServiceConfig_DefaultListenAddrWhenConnectIPEmpty(t *te
 	}
 }
 
+func TestBuildTunnelChainConfig_PreservesLatencyStrategy(t *testing.T) {
+	from := &nodeRecord{Name: "from", ServerIPv4: "10.0.0.1"}
+	toFast := &nodeRecord{Name: "fast-exit", ServerIPv4: "10.0.0.2"}
+	toSlow := &nodeRecord{Name: "slow-exit", ServerIPv4: "10.0.0.3"}
+
+	cfg, err := buildTunnelChainConfig(88, 1, []tunnelRuntimeNode{
+		{NodeID: 2, Protocol: "tls", Port: 20001, Strategy: "latency"},
+		{NodeID: 3, Protocol: "tls", Port: 20002, Strategy: "latency"},
+	}, map[int64]*nodeRecord{
+		1: from,
+		2: toFast,
+		3: toSlow,
+	}, "")
+	if err != nil {
+		t.Fatalf("buildTunnelChainConfig: %v", err)
+	}
+
+	hops, _ := cfg["hops"].([]map[string]interface{})
+	if len(hops) != 1 {
+		t.Fatalf("expected 1 hop, got %d", len(hops))
+	}
+
+	selectorCfg, _ := hops[0]["selector"].(map[string]interface{})
+	if selectorCfg["strategy"] != "latency" {
+		t.Fatalf("expected selector strategy latency, got %v", selectorCfg["strategy"])
+	}
+}
+
 func TestNodeSupportsV6_Nil(t *testing.T) {
 	if nodeSupportsV6(nil) {
 		t.Fatal("nil node must not support v6")

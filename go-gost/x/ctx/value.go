@@ -129,3 +129,23 @@ func ExcludeNodesFromContext(ctx context.Context) []string {
 	v, _ := ctx.Value(keyExcludeNodes).([]string)
 	return v
 }
+
+type targetPathKey struct{}
+
+type TargetPath struct {
+	Network string
+	Address string
+}
+
+var (
+	keyTargetPath = &targetPathKey{}
+)
+
+func ContextWithTargetPath(ctx context.Context, target *TargetPath) context.Context {
+	return context.WithValue(ctx, keyTargetPath, target)
+}
+
+func TargetPathFromContext(ctx context.Context) *TargetPath {
+	v, _ := ctx.Value(keyTargetPath).(*TargetPath)
+	return v
+}

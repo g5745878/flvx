@@ -68,7 +68,7 @@ import { extractApiErrorMessage } from "@/api/error-message";
 interface ChainTunnel {
   nodeId: number;
   protocol?: string; // 'tls' | 'wss' | 'tcp' | 'mtls' | 'mwss' | 'mtcp' - 转发链协议
-  strategy?: string; // 'fifo' | 'round' | 'rand' - 仅转发链需要
+  strategy?: string; // 'fifo' | 'round' | 'rand' | 'latency' - 仅转发链需要
   chainType?: number; // 1: 入口, 2: 转发链, 3: 出口
   inx?: number; // 转发链序号
   connectIp?: string; // 连接IP（多IP节点指定连接地址）
@@ -1939,6 +1939,9 @@ export default function TunnelPage() {
                                     <SelectItem key="fifo">主备</SelectItem>
                                     <SelectItem key="round">轮询</SelectItem>
                                     <SelectItem key="rand">随机</SelectItem>
+                                    <SelectItem key="latency">
+                                      延迟优先
+                                    </SelectItem>
                                   </Select>
                                 </div>
 
@@ -2278,6 +2281,7 @@ export default function TunnelPage() {
                                 <SelectItem key="fifo">主备</SelectItem>
                                 <SelectItem key="round">轮询</SelectItem>
                                 <SelectItem key="rand">随机</SelectItem>
+                                <SelectItem key="latency">延迟优先</SelectItem>
                               </Select>
                             </div>
 

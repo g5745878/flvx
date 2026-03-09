@@ -210,6 +210,10 @@ func (p *chainHop) Select(ctx context.Context, opts ...hop.SelectOption) *chain.
 	// Note: FailFilter has a safety guard (len <= 1 returns as-is) to ensure
 	// the last remaining node is never permanently blocked.
 	if s := p.options.selector; s != nil {
+		ctx = ctxvalue.ContextWithTargetPath(ctx, &ctxvalue.TargetPath{
+			Network: options.Network,
+			Address: options.Addr,
+		})
 		log.Debugf("[hop.Select] calling selector.Select with %d nodes", len(nodes))
 		if node := s.Select(ctx, nodes...); node != nil {
 			log.Debugf("[hop.Select] selected node=%s addr=%s", node.Name, node.Addr)
