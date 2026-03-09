@@ -298,12 +298,6 @@ func (s *latencyStrategy) probeMarked(ctx context.Context, targets []latencyProb
 		timeout = latencyProbeTimeout
 	}
 
-	type result struct {
-		addr  string
-		entry latencyProbeEntry
-	}
-
-	results := make(chan result, len(targets))
 	var wg sync.WaitGroup
 
 	for _, target := range targets {
@@ -318,8 +312,8 @@ func (s *latencyStrategy) probeMarked(ctx context.Context, targets []latencyProb
 			probeCtx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
-			if target := ctxvalue.TargetPathFromContext(ctx); target != nil {
-				probeCtx = ctxvalue.ContextWithTargetPath(probeCtx, target)
+			if tp := ctxvalue.TargetPathFromContext(ctx); tp != nil {
+				probeCtx = ctxvalue.ContextWithTargetPath(probeCtx, tp)
 			}
 
 			rtt, err := s.probe(probeCtx, target.node)
@@ -332,16 +326,11 @@ func (s *latencyStrategy) probeMarked(ctx context.Context, targets []latencyProb
 			if err != nil {
 				entry.expiresAt = now.Add(latencyFailureTTL)
 			}
-			results <- result{addr: target.cacheKey, entry: entry}
+			s.finishProbe(target.cacheKey, entry)
 		}(target)
 	}
 
 	wg.Wait()
-	close(results)
-
-	for item := range results {
-		s.finishProbe(item.addr, item.entry)
-	}
 }
 
 func (s *latencyStrategy) finishProbe(addr string, entry latencyProbeEntry) {
@@ -354,7 +343,6 @@ func (s *latencyStrategy) finishProbe(addr string, entry latencyProbeEntry) {
 
 	delete(s.probing, addr)
 	s.cache[addr] = entry
-	s.cleanupExpiredLocked(time.Now(), nil)
 }
 
 func (s *latencyStrategy) snapshot(ctx context.Context, vs []*chain.Node) map[string]latencyProbeEntry {

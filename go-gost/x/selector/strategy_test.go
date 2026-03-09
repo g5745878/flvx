@@ -59,17 +59,12 @@ func TestLatencyStrategyRefreshesStaleEntriesAsync(t *testing.T) {
 
 	var mu sync.Mutex
 	calls := map[string]int{}
-	refreshDone := make(chan struct{}, 2)
 
 	probe := func(ctx context.Context, node *chain.Node) (time.Duration, error) {
 		mu.Lock()
 		calls[node.Addr]++
 		call := calls[node.Addr]
 		mu.Unlock()
-
-		if call > 1 {
-			refreshDone <- struct{}{}
-		}
 
 		switch node.Addr {
 		case "fast:443":
@@ -110,10 +105,16 @@ func TestLatencyStrategyRefreshesStaleEntriesAsync(t *testing.T) {
 		t.Fatalf("expected stale cache to keep routing through fast:443 before refresh, got %+v", selected)
 	}
 
-	waitForProbeSignal(t, refreshDone)
-	waitForProbeSignal(t, refreshDone)
-
-	selected = strategy.Apply(context.Background(), nodes...)
+	// Wait for the async refresh to propagate to the cache (up to 1 second).
+	// After the refresh slow:443 becomes faster (5 ms) than fast:443 (80 ms).
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		selected = strategy.Apply(context.Background(), nodes...)
+		if selected != nil && selected.Addr == "slow:443" {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
 	if selected == nil || selected.Addr != "slow:443" {
 		t.Fatalf("expected refreshed cache to switch to slow:443, got %+v", selected)
 	}
@@ -218,12 +219,3 @@ func TestLatencyStrategyPrunesExpiredTargets(t *testing.T) {
 	}
 }
 
-func waitForProbeSignal(t *testing.T, ch <-chan struct{}) {
-	t.Helper()
-
-	select {
-	case <-ch:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for async probe refresh")
-	}
-}
