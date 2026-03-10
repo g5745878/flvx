@@ -22,13 +22,72 @@ get_architecture() {
     esac
 }
 
-# 安装目录
-INSTALL_DIR="/etc/flux_agent"
+# 默认实例配置
+DEFAULT_INSTANCE_NAME="default"
+INSTALL_BASE_DIR="/etc/flux_agent"
+SERVICE_BASENAME="flux_agent"
+INSTANCE_SOURCE="default"
+INSTANCE_NAME="${FLUX_INSTANCE:-$DEFAULT_INSTANCE_NAME}"
+INSTALL_DIR="$INSTALL_BASE_DIR"
+SERVICE_NAME="$SERVICE_BASENAME"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+INSTANCE_LABEL="默认实例"
 
 # 镜像加速（所有下载均经过镜像源，以支持 IPv6）
 maybe_proxy_url() {
   local url="$1"
   echo "https://gcode.hostcentral.cc/${url}"
+}
+
+normalize_instance_name() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "$DEFAULT_INSTANCE_NAME"
+    return 0
+  fi
+  echo "$name"
+}
+
+validate_instance_name() {
+  local name="$1"
+  if [[ ! "$name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "❌ 实例名只能包含字母、数字、点、下划线和中划线。"
+    exit 1
+  fi
+}
+
+set_instance_paths() {
+  INSTANCE_NAME=$(normalize_instance_name "$1")
+  validate_instance_name "$INSTANCE_NAME"
+
+  if [[ "$INSTANCE_NAME" == "$DEFAULT_INSTANCE_NAME" ]]; then
+    INSTALL_DIR="$INSTALL_BASE_DIR"
+    SERVICE_NAME="$SERVICE_BASENAME"
+    INSTANCE_LABEL="默认实例"
+  else
+    INSTALL_DIR="${INSTALL_BASE_DIR}-${INSTANCE_NAME}"
+    SERVICE_NAME="${SERVICE_BASENAME}-${INSTANCE_NAME}"
+    INSTANCE_LABEL="实例 ${INSTANCE_NAME}"
+  fi
+
+  SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+}
+
+prompt_instance_name() {
+  local input
+  if [[ "$INSTANCE_SOURCE" != "default" ]]; then
+    return 0
+  fi
+
+  read -p "实例名（留空为默认实例）: " input
+  if [[ -n "$input" ]]; then
+    INSTANCE_SOURCE="prompt"
+  fi
+  set_instance_paths "$input"
+}
+
+service_exists() {
+  systemctl list-unit-files --full 2>/dev/null | grep -Fq "${SERVICE_NAME}.service"
 }
 
 resolve_latest_release_tag() {
@@ -92,6 +151,7 @@ show_menu() {
   echo "==============================================="
   echo "              管理脚本"
   echo "==============================================="
+  echo "当前目标: $INSTANCE_LABEL"
   echo "请选择操作："
   echo "1. 安装"
   echo "2. 更新"  
@@ -199,30 +259,33 @@ get_config_params() {
 }
 
 # 解析命令行参数
-while getopts "a:s:" opt; do
+while getopts "a:s:n:" opt; do
   case $opt in
     a) SERVER_ADDR="$OPTARG" ;;
     s) SECRET="$OPTARG" ;;
+    n) INSTANCE_NAME="$OPTARG"; INSTANCE_SOURCE="arg" ;;
     *) echo "❌ 无效参数"; exit 1 ;;
   esac
 done
 
+set_instance_paths "$INSTANCE_NAME"
+
 # 安装功能
 install_flux_agent() {
-  echo "🚀 开始安装 flux_agent..."
+  prompt_instance_name
+  echo "🚀 开始安装 ${INSTANCE_LABEL} (${SERVICE_NAME})..."
   get_config_params
 
-    # 检查并安装 tcpkill
+  # 检查并安装 tcpkill
   check_and_install_tcpkill
-  
 
   mkdir -p "$INSTALL_DIR"
 
   # 停止并禁用已有服务
-  if systemctl list-units --full -all | grep -Fq "flux_agent.service"; then
-    echo "🔍 检测到已存在的flux_agent服务"
-    systemctl stop flux_agent 2>/dev/null && echo "🛑 停止服务"
-    systemctl disable flux_agent 2>/dev/null && echo "🚫 禁用自启"
+  if service_exists; then
+    echo "🔍 检测到已存在的 ${SERVICE_NAME}.service"
+    systemctl stop "$SERVICE_NAME" 2>/dev/null && echo "🛑 停止服务"
+    systemctl disable "$SERVICE_NAME" 2>/dev/null && echo "🚫 禁用自启"
   fi
 
   # 删除旧文件
@@ -266,7 +329,6 @@ EOF
   chmod 600 "$INSTALL_DIR"/*.json
 
   # 创建 systemd 服务
-  SERVICE_FILE="/etc/systemd/system/flux_agent.service"
   cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Flux_agent Proxy Service
@@ -285,27 +347,29 @@ EOF
 
   # 启动服务
   systemctl daemon-reload
-  systemctl enable flux_agent
-  systemctl start flux_agent
+  systemctl enable "$SERVICE_NAME"
+  systemctl start "$SERVICE_NAME"
 
   # 检查状态
   echo "🔄 检查服务状态..."
-  if systemctl is-active --quiet flux_agent; then
-    echo "✅ 安装完成，flux_agent服务已启动并设置为开机启动。"
+  if systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo "✅ 安装完成，${SERVICE_NAME}.service 已启动并设置为开机启动。"
     echo "📁 配置目录: $INSTALL_DIR"
-    echo "🔧 服务状态: $(systemctl is-active flux_agent)"
+    echo "🔧 服务名: ${SERVICE_NAME}.service"
+    echo "🔧 服务状态: $(systemctl is-active "$SERVICE_NAME")"
   else
-    echo "❌ flux_agent服务启动失败，请执行以下命令查看状态："
-    echo "systemctl status flux_agent --no-pager"
+    echo "❌ ${SERVICE_NAME}.service 启动失败，请执行以下命令查看状态："
+    echo "systemctl status ${SERVICE_NAME} --no-pager"
   fi
 }
 
 # 更新功能
 update_flux_agent() {
-  echo "🔄 开始更新 flux_agent..."
+  prompt_instance_name
+  echo "🔄 开始更新 ${INSTANCE_LABEL} (${SERVICE_NAME})..."
   
   if [[ ! -d "$INSTALL_DIR" ]]; then
-    echo "❌ flux_agent 未安装，请先选择安装。"
+    echo "❌ ${INSTANCE_LABEL} 未安装，请先选择安装。"
     return 1
   fi
   
@@ -323,9 +387,9 @@ update_flux_agent() {
   fi
 
   # 停止服务
-  if systemctl list-units --full -all | grep -Fq "flux_agent.service"; then
-    echo "🛑 停止 flux_agent 服务..."
-    systemctl stop flux_agent
+  if service_exists; then
+    echo "🛑 停止 ${SERVICE_NAME} 服务..."
+    systemctl stop "$SERVICE_NAME"
   fi
 
   # 替换文件
@@ -337,31 +401,32 @@ update_flux_agent() {
 
   # 重启服务
   echo "🔄 重启服务..."
-  systemctl start flux_agent
+  systemctl start "$SERVICE_NAME"
   
-  echo "✅ 更新完成，服务已重新启动。"
+  echo "✅ 更新完成，${SERVICE_NAME}.service 已重新启动。"
 }
 
 # 卸载功能
 uninstall_flux_agent() {
-  echo "🗑️ 开始卸载 flux_agent..."
+  prompt_instance_name
+  echo "🗑️ 开始卸载 ${INSTANCE_LABEL} (${SERVICE_NAME})..."
   
-  read -p "确认卸载 flux_agent 吗？此操作将删除所有相关文件 (y/N): " confirm
+  read -p "确认卸载 ${SERVICE_NAME}.service 吗？此操作将删除该实例所有相关文件 (y/N): " confirm
   if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     echo "❌ 取消卸载"
     return 0
   fi
 
   # 停止并禁用服务
-  if systemctl list-units --full -all | grep -Fq "flux_agent.service"; then
+  if service_exists; then
     echo "🛑 停止并禁用服务..."
-    systemctl stop flux_agent 2>/dev/null
-    systemctl disable flux_agent 2>/dev/null
+    systemctl stop "$SERVICE_NAME" 2>/dev/null
+    systemctl disable "$SERVICE_NAME" 2>/dev/null
   fi
 
   # 删除服务文件
-  if [[ -f "/etc/systemd/system/flux_agent.service" ]]; then
-    rm -f "/etc/systemd/system/flux_agent.service"
+  if [[ -f "$SERVICE_FILE" ]]; then
+    rm -f "$SERVICE_FILE"
     echo "🧹 删除服务文件"
   fi
 
