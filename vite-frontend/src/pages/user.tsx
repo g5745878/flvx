@@ -1,4 +1,3 @@
-import { SearchBar } from "@/components/search-bar";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import { parseDate } from "@internationalized/date";
@@ -60,12 +59,7 @@ import {
   getUserGroupList,
   getUserGroups,
 } from "@/api";
-import {
-  SearchIcon,
-  EditIcon,
-  DeleteIcon,
-  SettingsIcon,
-} from "@/components/icons";
+import { EditIcon, DeleteIcon, SettingsIcon, SearchIcon } from "@/components/icons";
 import { PageLoadingState } from "@/components/page-state";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import { removeItemsById, replaceItemById } from "@/utils/list-state";
@@ -784,6 +778,7 @@ export default function UserPage() {
 
   const handleQuotaReset = async (scope: "daily" | "monthly" | "all") => {
     const userId = userForm.id;
+
     if (!userId) {
       return;
     }
@@ -888,34 +883,67 @@ export default function UserPage() {
     <AnimatedPage className="px-3 lg:px-6 py-8">
       {/* 页面头部 */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mb-6 gap-3">
-        <div className={`flex-1 max-w-sm flex items-center gap-2 shrink-0 ${isSearchVisible ? "min-w-[200px]" : "min-w-0"}`}>
-          <SearchBar
-            isVisible={isSearchVisible}
-            placeholder="搜索用户名"
-            value={searchKeyword}
-            onChange={setSearchKeyword}
-            onClose={() => {
-              setIsSearchVisible(false);
-              setSearchKeyword("");
-            }}
-            onOpen={() => {
-              setIsSearchVisible(true);
-              setTimeout(() => {
-                const searchInput = document.querySelector('input[placeholder*="搜索"]');
-                if (searchInput) (searchInput as HTMLElement).focus();
-              }, 150);
-            }}
-          />
+        <div className="flex-1 max-w-sm flex items-center gap-2">
+          {!isSearchVisible ? (
+            <Button
+              isIconOnly
+              aria-label="搜索"
+              className="text-default-600"
+              color="default"
+              size="sm"
+              variant="flat"
+              onPress={() => setIsSearchVisible(true)}
+            >
+              <SearchIcon className="w-4 h-4" />
+            </Button>
+          ) : (
+            <div className="flex w-full items-center gap-2 animate-appearance-in">
+              <Input
+                classNames={{
+                  base: "bg-default-100",
+                  input: "bg-transparent",
+                  inputWrapper:
+                    "bg-default-100 border-2 border-default-200 hover:border-default-300 data-[hover=true]:border-default-300",
+                }}
+                placeholder="搜索用户名"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              />
+              <Button
+                isIconOnly
+                aria-label="关闭搜索"
+                className="text-default-600 shrink-0"
+                color="default"
+                size="sm"
+                variant="light"
+                onPress={() => {
+                  setIsSearchVisible(false);
+                  setSearchKeyword("");
+                }}
+              >
+                <svg
+                  aria-hidden="true"
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M6 18L18 6M6 6l12 12"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                  />
+                </svg>
+              </Button>
+            </div>
+          )}
         </div>
-<Button 
-  className="w-fit self-end sm:self-auto" 
-  color="primary" 
-  size="sm" 
-  variant="flat" 
-  onPress={handleAdd}
->
-  新增
-</Button>
+
+        <Button color="primary" size="sm" variant="flat" onPress={handleAdd}>
+          新增
+        </Button>
       </div>
 
       {/* 用户列表 */}
@@ -1126,8 +1154,11 @@ export default function UserPage() {
       )}
 
       {/* 用户表单模态框 */}
-      <Modal classNames={{ base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl" }}
+      <Modal
         backdrop="blur"
+        classNames={{
+          base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl",
+        }}
         isOpen={isUserModalOpen}
         placement="center"
         scrollBehavior="outside"
@@ -1281,8 +1312,8 @@ export default function UserPage() {
                     <div className="rounded-lg bg-background p-3">
                       <div className="text-xs text-default-500">每月用量</div>
                       <div className="mt-1 text-sm font-semibold text-foreground">
-                        {formatFlow(Number(editingUser.monthlyUsedBytes ?? 0))} /{" "}
-                        {formatQuotaLimit(editingUser.monthlyQuotaGB)}
+                        {formatFlow(Number(editingUser.monthlyUsedBytes ?? 0))}{" "}
+                        / {formatQuotaLimit(editingUser.monthlyQuotaGB)}
                       </div>
                     </div>
                   </div>
@@ -1386,37 +1417,61 @@ export default function UserPage() {
                 <h3 className="text-lg font-semibold mb-4">分配新权限</h3>
                 <div className="space-y-4">
                   <div className="flex flex-col gap-2 relative">
-                    <p className="text-base text-default-700 ml-1 font-medium">隧道列表</p>
-                    
+                    <p className="text-base text-default-700 ml-1 font-medium">
+                      隧道列表
+                    </p>
+
                     {/* 顶部触发框 */}
-                    <div 
+                    <div
                       className={`group flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all cursor-pointer shadow-sm w-[320px] ${isTunnelListExpanded ? "border-primary bg-white ring-2 ring-primary/10" : "border-default-200 bg-default-50 hover:border-primary-300"}`}
-                      onClick={() => setIsTunnelListExpanded(!isTunnelListExpanded)}
+                      onClick={() =>
+                        setIsTunnelListExpanded(!isTunnelListExpanded)
+                      }
                     >
-                      <span className={`text-sm truncate ${batchTunnelSelections.size > 0 ? "text-primary-500 font-bold" : "text-default-400"}`}>
-                        {batchTunnelSelections.size > 0 
-                          ? `已选 ${batchTunnelSelections.size} 项：` + Array.from(batchTunnelSelections.keys()).map(id => tunnels.find(t => t.id === id)?.name).join('、')
+                      <span
+                        className={`text-sm truncate ${batchTunnelSelections.size > 0 ? "text-primary-500 font-bold" : "text-default-400"}`}
+                      >
+                        {batchTunnelSelections.size > 0
+                          ? `已选 ${batchTunnelSelections.size} 项：` +
+                            Array.from(batchTunnelSelections.keys())
+                              .map(
+                                (id) => tunnels.find((t) => t.id === id)?.name,
+                              )
+                              .join("、")
                           : "请选择隧道（勾选后配置限速）"}
                       </span>
-                      <svg className={`w-5 h-5 text-default-400 transition-transform ${isTunnelListExpanded ? "rotate-180 text-primary" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth={2.5} /></svg>
+                      <svg
+                        className={`w-5 h-5 text-default-400 transition-transform ${isTunnelListExpanded ? "rotate-180 text-primary" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M19 9l-7 7-7-7" strokeWidth={2.5} />
+                      </svg>
                     </div>
 
                     {/* 列表悬浮层 */}
                     {isTunnelListExpanded && (
-                      <div 
+                      <div
                         className="absolute top-[calc(100%+8px)] left-0 w-[320px] border border-default-200 rounded-2xl bg-white dark:bg-default-900 shadow-2xl overflow-hidden z-[999]"
-                        onClick={(e) => e.stopPropagation()} 
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <div className="max-h-[350px] overflow-y-auto p-2 custom-scrollbar">
                           {tunnels.map((tunnel) => {
                             const isAssigned = isTunnelAssigned(tunnel.id);
-                            const isSelected = batchTunnelSelections.has(tunnel.id);
-                            const tunnelSpeedLimits = getSpeedLimitsForTunnel(tunnel.id);
-                            const currentSpeedId = batchTunnelSelections.get(tunnel.id);
+                            const isSelected = batchTunnelSelections.has(
+                              tunnel.id,
+                            );
+                            const tunnelSpeedLimits = getSpeedLimitsForTunnel(
+                              tunnel.id,
+                            );
+                            const currentSpeedId = batchTunnelSelections.get(
+                              tunnel.id,
+                            );
 
                             return (
-                              <div 
-                                key={tunnel.id} 
+                              <div
+                                key={tunnel.id}
                                 className={`flex items-center justify-between px-4 py-2.5 rounded-xl mb-1 border transition-all ${isSelected ? "bg-primary-50/60 border-primary-200" : "bg-transparent border-transparent hover:bg-default-100"} ${isAssigned ? "opacity-40 grayscale cursor-not-allowed" : "cursor-pointer"}`}
                                 // 核心：整行点击直接控制状态
                                 onClick={(e) => {
@@ -1426,47 +1481,80 @@ export default function UserPage() {
                                 }}
                               >
                                 <div className="flex items-center gap-4 min-w-0 flex-1">
-                                  <Checkbox 
+                                  <Checkbox
                                     color="primary" 
                                     isSelected={isSelected} 
                                     isDisabled={isAssigned}
                                     // 关键：禁用 Checkbox 自身的点击，防止它跟父容器打架
                                     className="pointer-events-none"
                                   />
-                                  <span className={`text-sm font-medium truncate ${isSelected ? "text-primary-700" : ""}`}>{tunnel.name}</span>
+                                  <span
+                                    className={`text-sm font-medium truncate ${isSelected ? "text-primary-700" : ""}`}
+                                  >
+                                    {tunnel.name}
+                                  </span>
                                 </div>
 
                                 {/* 右侧限速选择：复刻 image_24879b */}
                                 {isSelected && !isAssigned && (
-                                  <div className="flex items-center ml-2" onClick={(e) => e.stopPropagation()}>
+                                  <div
+                                    className="flex items-center ml-2"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
                                     <Select
                                       aria-label="限速选择"
                                       className="w-32"
+                                      placeholder="不限速"
+                                      selectedKeys={
+                                        currentSpeedId
+                                          ? [currentSpeedId.toString()]
+                                          : []
+                                      }
                                       size="sm"
                                       variant="flat"
-                                      placeholder="不限速"
-                                      selectedKeys={currentSpeedId ? [currentSpeedId.toString()] : []}
                                       onSelectionChange={(keys) => {
                                         const selectedKey = Array.from(keys)[0];
-                                        updateTunnelSpeedLimit(tunnel.id, selectedKey ? Number(selectedKey) : null);
+
+                                        updateTunnelSpeedLimit(
+                                          tunnel.id,
+                                          selectedKey
+                                            ? Number(selectedKey)
+                                            : null,
+                                        );
                                       }}
                                     >
-                                      {tunnelSpeedLimits.map(sl => <SelectItem key={sl.id.toString()}>{sl.name}</SelectItem>)}
+                                      {tunnelSpeedLimits.map((sl) => (
+                                        <SelectItem key={sl.id.toString()}>
+                                          {sl.name}
+                                        </SelectItem>
+                                      ))}
                                     </Select>
                                   </div>
                                 )}
-                                {isAssigned && <span className="text-[10px] text-default-400 italic pr-2">已分配</span>}
+                                {isAssigned && (
+                                  <span className="text-[10px] text-default-400 italic pr-2">
+                                    已分配
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
                         </div>
                         <div className="bg-default-50/80 border-t p-2 flex justify-end">
-                           <Button size="md" variant="light" color="primary" className="font-bold" onPress={() => setIsTunnelListExpanded(false)}>完成配置</Button>
+                          <Button
+                            className="font-bold"
+                            color="primary"
+                            size="md"
+                            variant="light"
+                            onPress={() => setIsTunnelListExpanded(false)}
+                          >
+                            完成配置
+                          </Button>
                         </div>
                       </div>
                     )}
                   </div>
-<div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       className="w-fit px-8"
                       color="primary"
@@ -1488,104 +1576,120 @@ export default function UserPage() {
               {/* 已有权限部分 */}
               <div>
                 <h3 className="text-lg font-semibold mb-4">已有权限</h3>
-<Table
-  aria-label="用户隧道权限列表"
-  // 1. 去掉 layout="fixed"，改为在 classNames.table 里写 table-fixed
-  classNames={{
-    wrapper: "shadow-none p-0 min-w-[380px] overflow-x-auto",
-    th: "bg-default-50 text-default-600 font-semibold",
-    td: "py-4 border-b border-divider"
-  }}
->
-  <TableHeader>
-    <TableColumn className="w-[35%]">隧道名称</TableColumn>
-    <TableColumn className="w-[35%]">流量统计</TableColumn>
-    <TableColumn className="w-[30%] text-right">操作</TableColumn>
-  </TableHeader>
-  <TableBody
-    emptyContent="暂无隧道权限"
-    isLoading={tunnelListLoading}
-    items={userTunnels}
-    loadingContent={<Spinner />}
-  >
-    {(userTunnel) => (
-      <TableRow key={userTunnel.id} className="hover:bg-default-50/50 transition-colors">
-        <TableCell>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-default-700 whitespace-nowrap">
-              {userTunnel.tunnelName}
-            </span>
-          </div>
-        </TableCell>
+                <Table
+                  aria-label="用户隧道权限列表"
+                  // 1. 去掉 layout="fixed"，改为在 classNames.table 里写 table-fixed
+                  classNames={{
+                    wrapper: "shadow-none p-0 min-w-[380px] overflow-x-auto",
+                    th: "bg-default-50 text-default-600 font-semibold",
+                    td: "py-4 border-b border-divider",
+                  }}
+                >
+                  <TableHeader>
+                    <TableColumn className="w-[35%]">隧道名称</TableColumn>
+                    <TableColumn className="w-[35%]">流量统计</TableColumn>
+                    <TableColumn className="w-[30%] text-right">
+                      操作
+                    </TableColumn>
+                  </TableHeader>
+                  <TableBody
+                    emptyContent="暂无隧道权限"
+                    isLoading={tunnelListLoading}
+                    items={userTunnels}
+                    loadingContent={<Spinner />}
+                  >
+                    {(userTunnel) => (
+                      <TableRow
+                        key={userTunnel.id}
+                        className="hover:bg-default-50/50 transition-colors"
+                      >
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-default-700 whitespace-nowrap">
+                              {userTunnel.tunnelName}
+                            </span>
+                          </div>
+                        </TableCell>
 
-        <TableCell>
-          <div className="flex items-center gap-1 whitespace-nowrap text-sm">
-            <span className="text-danger font-mono font-bold">
-              {formatFlow(calculateTunnelUsedFlow(userTunnel))}
-            </span>
-            <span className="text-default-300">/</span>
-            <span className="text-default-500 font-mono">
-              {formatFlow(userTunnel.flow, "gb")}
-            </span>
-          </div>
-        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1 whitespace-nowrap text-sm">
+                            <span className="text-danger font-mono font-bold">
+                              {formatFlow(calculateTunnelUsedFlow(userTunnel))}
+                            </span>
+                            <span className="text-default-300">/</span>
+                            <span className="text-default-500 font-mono">
+                              {formatFlow(userTunnel.flow, "gb")}
+                            </span>
+                          </div>
+                        </TableCell>
 
-        <TableCell>
-          {/* 5. justify-end 确保按钮群组整体靠右 */}
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              isIconOnly
-              size="sm"
-              variant="flat"
-              className="bg-blue-50 text-blue-600 hover:bg-blue-100 w-8 h-8 min-w-8"
-              onPress={() => handleEditTunnel(userTunnel)}
-            >
-              <EditIcon className="w-4 h-4" />
-            </Button>
-            <Button
-              isIconOnly
-              size="sm"
-              variant="flat"
-              className="bg-orange-50 text-orange-600 hover:bg-orange-100 w-8 h-8 min-w-8"
-              onPress={() => handleResetTunnelFlow(userTunnel)}
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path clipRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" fillRule="evenodd" />
-              </svg>
-            </Button>
-            <Button
-              isIconOnly
-              size="sm"
-              variant="flat"
-              className="bg-danger-50 text-danger hover:bg-danger-100 w-8 h-8 min-w-8"
-              onPress={() => handleRemoveTunnel(userTunnel)}
-            >
-              <DeleteIcon className="w-4 h-4" />
-            </Button>
-          </div>
-        </TableCell>
-      </TableRow>
-    )}
-  </TableBody>
-</Table>
+                        <TableCell>
+                          {/* 5. justify-end 确保按钮群组整体靠右 */}
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              isIconOnly
+                              className="bg-blue-50 text-blue-600 hover:bg-blue-100 w-8 h-8 min-w-8"
+                              size="sm"
+                              variant="flat"
+                              onPress={() => handleEditTunnel(userTunnel)}
+                            >
+                              <EditIcon className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              isIconOnly
+                              className="bg-orange-50 text-orange-600 hover:bg-orange-100 w-8 h-8 min-w-8"
+                              size="sm"
+                              variant="flat"
+                              onPress={() => handleResetTunnelFlow(userTunnel)}
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path
+                                  clipRule="evenodd"
+                                  d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+                                  fillRule="evenodd"
+                                />
+                              </svg>
+                            </Button>
+                            <Button
+                              isIconOnly
+                              className="bg-danger-50 text-danger hover:bg-danger-100 w-8 h-8 min-w-8"
+                              size="sm"
+                              variant="flat"
+                              onPress={() => handleRemoveTunnel(userTunnel)}
+                            >
+                              <DeleteIcon className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           </ModalBody>
-<ModalFooter className="justify-end">
-  <Button 
-    onPress={onTunnelModalClose} 
-    color="primary" 
-    variant="flat" // 建议加个 variant 保持和你其他按钮风格一致
-  >
-    关闭
-  </Button>
-</ModalFooter>
+          <ModalFooter className="justify-end">
+            <Button
+              color="primary"
+              variant="flat" // 建议加个 variant 保持和你其他按钮风格一致
+              onPress={onTunnelModalClose}
+            >
+              关闭
+            </Button>
+          </ModalFooter>
         </ModalContent>
       </Modal>
 
       {/* 编辑隧道权限模态框 */}
-      <Modal classNames={{ base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl" }}
+      <Modal
         backdrop="blur"
+        classNames={{
+          base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl",
+        }}
         isDismissable={false}
         isOpen={isEditTunnelModalOpen}
         placement="center"
@@ -1762,8 +1866,11 @@ export default function UserPage() {
       </Modal>
 
       {/* 删除确认对话框 */}
-      <Modal classNames={{ base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl" }}
+      <Modal
         backdrop="blur"
+        classNames={{
+          base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl",
+        }}
         isOpen={isDeleteModalOpen}
         placement="center"
         scrollBehavior="outside"
@@ -1805,8 +1912,11 @@ export default function UserPage() {
       </Modal>
 
       {/* 删除隧道权限确认对话框 */}
-      <Modal classNames={{ base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl" }}
+      <Modal
         backdrop="blur"
+        classNames={{
+          base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl",
+        }}
         isOpen={isDeleteTunnelModalOpen}
         placement="center"
         scrollBehavior="outside"
@@ -1850,8 +1960,11 @@ export default function UserPage() {
       </Modal>
 
       {/* 重置流量确认对话框 */}
-      <Modal classNames={{ base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl" }}
+      <Modal
         backdrop="blur"
+        classNames={{
+          base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl",
+        }}
         isOpen={isResetFlowModalOpen}
         placement="center"
         scrollBehavior="outside"
@@ -1939,8 +2052,11 @@ export default function UserPage() {
       </Modal>
 
       {/* 重置隧道流量确认对话框 */}
-      <Modal classNames={{ base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl" }}
+      <Modal
         backdrop="blur"
+        classNames={{
+          base: "!w-[calc(100%-32px)] !mx-auto sm:!w-full rounded-2xl",
+        }}
         isOpen={isResetTunnelFlowModalOpen}
         placement="center"
         scrollBehavior="outside"
