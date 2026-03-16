@@ -58,32 +58,33 @@ type ForwardPort struct {
 func (ForwardPort) TableName() string { return "forward_port" }
 
 type Node struct {
-	ID            int64          `gorm:"primaryKey;autoIncrement"`
-	Name          string         `gorm:"type:varchar(100);not null"`
-	Remark        sql.NullString `gorm:"column:remark;type:text"`
-	ExpiryTime    sql.NullInt64  `gorm:"column:expiry_time"`
-	RenewalCycle  sql.NullString `gorm:"column:renewal_cycle;type:varchar(20)"`
-	Secret        string         `gorm:"type:varchar(100);not null"`
-	ServerIP      string         `gorm:"column:server_ip;type:varchar(100);not null"`
-	ServerIPV4    sql.NullString `gorm:"column:server_ip_v4;type:varchar(100)"`
-	ServerIPV6    sql.NullString `gorm:"column:server_ip_v6;type:varchar(100)"`
-	ExtraIPs      sql.NullString `gorm:"column:extra_ips;type:text"`
-	Port          string         `gorm:"type:text;not null"`
-	InterfaceName sql.NullString `gorm:"column:interface_name;type:varchar(200)"`
-	Version       sql.NullString `gorm:"type:varchar(100)"`
-	HTTP          int            `gorm:"column:http;not null;default:0"`
-	TLS           int            `gorm:"column:tls;not null;default:0"`
-	Socks         int            `gorm:"not null;default:0"`
-	CreatedTime   int64          `gorm:"column:created_time;not null"`
-	UpdatedTime   sql.NullInt64  `gorm:"column:updated_time"`
-	Status        int            `gorm:"not null"`
-	TCPListenAddr string         `gorm:"column:tcp_listen_addr;type:varchar(100);not null;default:'[::]'"`
-	UDPListenAddr string         `gorm:"column:udp_listen_addr;type:varchar(100);not null;default:'[::]'"`
-	Inx           int            `gorm:"not null;default:0"`
-	IsRemote      int            `gorm:"column:is_remote;default:0"`
-	RemoteURL     sql.NullString `gorm:"column:remote_url;type:text"`
-	RemoteToken   sql.NullString `gorm:"column:remote_token;type:text"`
-	RemoteConfig  sql.NullString `gorm:"column:remote_config;type:text"`
+	ID                      int64          `gorm:"primaryKey;autoIncrement"`
+	Name                    string         `gorm:"type:varchar(100);not null"`
+	Remark                  sql.NullString `gorm:"column:remark;type:text"`
+	ExpiryTime              sql.NullInt64  `gorm:"column:expiry_time"`
+	RenewalCycle            sql.NullString `gorm:"column:renewal_cycle;type:varchar(20)"`
+	Secret                  string         `gorm:"type:varchar(100);not null"`
+	ServerIP                string         `gorm:"column:server_ip;type:varchar(100);not null"`
+	ServerIPV4              sql.NullString `gorm:"column:server_ip_v4;type:varchar(100)"`
+	ServerIPV6              sql.NullString `gorm:"column:server_ip_v6;type:varchar(100)"`
+	ExtraIPs                sql.NullString `gorm:"column:extra_ips;type:text"`
+	Port                    string         `gorm:"type:text;not null"`
+	InterfaceName           sql.NullString `gorm:"column:interface_name;type:varchar(200)"`
+	Version                 sql.NullString `gorm:"type:varchar(100)"`
+	HTTP                    int            `gorm:"column:http;not null;default:0"`
+	TLS                     int            `gorm:"column:tls;not null;default:0"`
+	Socks                   int            `gorm:"not null;default:0"`
+	CreatedTime             int64          `gorm:"column:created_time;not null"`
+	UpdatedTime             sql.NullInt64  `gorm:"column:updated_time"`
+	Status                  int            `gorm:"not null"`
+	TCPListenAddr           string         `gorm:"column:tcp_listen_addr;type:varchar(100);not null;default:'[::]'"`
+	UDPListenAddr           string         `gorm:"column:udp_listen_addr;type:varchar(100);not null;default:'[::]'"`
+	Inx                     int            `gorm:"not null;default:0"`
+	IsRemote                int            `gorm:"column:is_remote;default:0"`
+	RemoteURL               sql.NullString `gorm:"column:remote_url;type:text"`
+	RemoteToken             sql.NullString `gorm:"column:remote_token;type:text"`
+	RemoteConfig            sql.NullString `gorm:"column:remote_config;type:text"`
+	ExpiryReminderDismissed int            `gorm:"column:expiry_reminder_dismissed;not null;default:0"`
 }
 
 func (Node) TableName() string { return "node" }
@@ -128,6 +129,23 @@ type Tunnel struct {
 }
 
 func (Tunnel) TableName() string { return "tunnel" }
+
+type UserQuota struct {
+	UserID           int64  `gorm:"column:user_id;primaryKey"`
+	DailyLimitGB     int64  `gorm:"column:daily_limit_gb;not null;default:0"`
+	MonthlyLimitGB   int64  `gorm:"column:monthly_limit_gb;not null;default:0"`
+	DailyUsedBytes   int64  `gorm:"column:daily_used_bytes;not null;default:0"`
+	MonthlyUsedBytes int64  `gorm:"column:monthly_used_bytes;not null;default:0"`
+	DayKey           int64  `gorm:"column:day_key;not null;default:0"`
+	MonthKey         int64  `gorm:"column:month_key;not null;default:0"`
+	DisabledByQuota  int    `gorm:"column:disabled_by_quota;not null;default:0"`
+	DisabledAt       int64  `gorm:"column:disabled_at;not null;default:0"`
+	PausedForwardIDs string `gorm:"column:paused_forward_ids;type:text;not null;default:''"`
+	CreatedTime      int64  `gorm:"column:created_time;not null"`
+	UpdatedTime      int64  `gorm:"column:updated_time;not null"`
+}
+
+func (UserQuota) TableName() string { return "user_quota" }
 
 type ChainTunnel struct {
 	ID        int64          `gorm:"primaryKey;autoIncrement"`
@@ -321,19 +339,23 @@ type BackupData struct {
 }
 
 type UserBackup struct {
-	ID            int64  `json:"id"`
-	User          string `json:"user"`
-	Pwd           string `json:"pwd"`
-	RoleID        int    `json:"roleId"`
-	ExpTime       int64  `json:"expTime"`
-	Flow          int64  `json:"flow"`
-	InFlow        int64  `json:"inFlow"`
-	OutFlow       int64  `json:"outFlow"`
-	FlowResetTime int64  `json:"flowResetTime"`
-	Num           int    `json:"num"`
-	CreatedTime   int64  `json:"createdTime"`
-	UpdatedTime   int64  `json:"updatedTime,omitempty"`
-	Status        int    `json:"status"`
+	ID              int64  `json:"id"`
+	User            string `json:"user"`
+	Pwd             string `json:"pwd"`
+	RoleID          int    `json:"roleId"`
+	ExpTime         int64  `json:"expTime"`
+	Flow            int64  `json:"flow"`
+	InFlow          int64  `json:"inFlow"`
+	OutFlow         int64  `json:"outFlow"`
+	FlowResetTime   int64  `json:"flowResetTime"`
+	DailyQuotaGB    int64  `json:"dailyQuotaGB,omitempty"`
+	MonthlyQuotaGB  int64  `json:"monthlyQuotaGB,omitempty"`
+	DisabledByQuota int    `json:"disabledByQuota,omitempty"`
+	QuotaDisabledAt int64  `json:"quotaDisabledAt,omitempty"`
+	Num             int    `json:"num"`
+	CreatedTime     int64  `json:"createdTime"`
+	UpdatedTime     int64  `json:"updatedTime,omitempty"`
+	Status          int    `json:"status"`
 }
 
 type NodeBackup struct {
@@ -514,6 +536,19 @@ type TunnelRecord struct {
 	Status       int
 	Flow         int64
 	TrafficRatio float64
+}
+
+type UserQuotaView struct {
+	UserID           int64
+	DailyLimitGB     int64
+	MonthlyLimitGB   int64
+	DailyUsedBytes   int64
+	MonthlyUsedBytes int64
+	DayKey           int64
+	MonthKey         int64
+	DisabledByQuota  int
+	DisabledAt       int64
+	PausedForwardIDs string
 }
 
 // ForwardPortRecord is a forward port mapping used by control plane.

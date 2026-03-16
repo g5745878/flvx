@@ -18,6 +18,7 @@ import type {
   UserMutationPayload,
   NodeMutationPayload,
   TunnelMutationPayload,
+  UserQuotaResetPayload,
   UserTunnelAssignPayload,
   UserTunnelListQuery,
   UserTunnelRemovePayload,
@@ -77,6 +78,8 @@ export const getNodeInstallCommand = (
 export const updateNodeOrder = (data: {
   nodes: Array<{ id: number; inx: number }>;
 }) => Network.post("/node/update-order", data);
+export const dismissNodeExpiryReminder = (id: number) =>
+  Network.post("/node/dismiss-expiry-reminder", { id });
 export const checkNodeStatus = (nodeId?: number) => {
   const params = nodeId ? { nodeId } : {};
 
@@ -193,6 +196,8 @@ export const updatePassword = (data: UpdatePasswordPayload) =>
 // 重置流量接口
 export const resetUserFlow = (data: { id: number; type: number }) =>
   Network.post("/user/reset", data);
+export const resetUserQuota = (data: UserQuotaResetPayload) =>
+  Network.post("/user/quota/reset", data);
 
 export const getUserGroups = (id: number) =>
   Network.post<number[]>("/user/groups", { id });

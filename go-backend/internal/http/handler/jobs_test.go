@@ -143,3 +143,40 @@ func TestRunResetAndExpiryJobResetsFlowAndDisablesExpiredRecords(t *testing.T) {
 		t.Fatalf("expected non-expiring forward to remain enabled, got status=%d", nonExpForwardStatus)
 	}
 }
+
+func TestRunResetAndExpiryJobResetsUserQuotaAndUnblocksUser(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "jobs-quota-reset.db")
+	r, err := repo.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	h := New(r, "secret")
+	now := time.Date(2026, 3, 12, 0, 0, 5, 0, time.UTC)
+	nowMs := now.UnixMilli()
+
+	if err := r.DB().Exec(`
+		INSERT INTO user(id, user, pwd, role_id, exp_time, flow, in_flow, out_flow, flow_reset_time, num, created_time, updated_time, status)
+		VALUES(2, 'quota-reset-user', 'x', 1, 0, 99999, 0, 0, 1, 99999, ?, ?, 1)
+	`, nowMs, nowMs).Error; err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if err := r.DB().Exec(`
+		INSERT INTO user_quota(user_id, daily_limit_gb, monthly_limit_gb, daily_used_bytes, monthly_used_bytes, day_key, month_key, disabled_by_quota, disabled_at, paused_forward_ids, created_time, updated_time)
+		VALUES(2, 10, 0, ?, ?, 20260311, 202603, 1, ?, '', ?, ?)
+	`, 11*int64(1024*1024*1024), 11*int64(1024*1024*1024), nowMs, nowMs, nowMs).Error; err != nil {
+		t.Fatalf("insert user quota: %v", err)
+	}
+
+	h.runResetAndExpiryJob(now)
+
+	dailyUsed := mustQueryInt(t, r, `SELECT daily_used_bytes FROM user_quota WHERE user_id = 2`)
+	if dailyUsed != 0 {
+		t.Fatalf("expected daily quota usage reset, got %d", dailyUsed)
+	}
+	quotaDisabled := mustQueryInt(t, r, `SELECT disabled_by_quota FROM user_quota WHERE user_id = 2`)
+	if quotaDisabled != 0 {
+		t.Fatalf("expected quota disabled flag cleared, got %d", quotaDisabled)
+	}
+}

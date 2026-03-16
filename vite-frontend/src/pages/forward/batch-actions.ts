@@ -1,4 +1,4 @@
-import type { BatchOperationResult } from "@/api/types";
+import type { BatchOperationFailure, BatchOperationResult } from "@/api/types";
 
 import {
   batchChangeTunnel,
@@ -7,12 +7,19 @@ import {
   batchRedeployForwards,
   batchResumeForwards,
 } from "@/api";
-import { extractApiErrorMessage } from "@/api/error-message";
+import {
+  buildBatchFailureMessage,
+  extractBatchFailures,
+  extractApiErrorMessage,
+} from "@/api/error-message";
 
 export interface ForwardBatchActionOutcome {
   toastVariant: "success" | "error";
   toastMessage: string;
   shouldRefresh: boolean;
+  resultTitle?: string;
+  resultSummary?: string;
+  failureDetails?: BatchOperationFailure[];
   progressPercent?: number;
   progressLabel?: string;
   closeDeleteModal?: boolean;
@@ -26,23 +33,41 @@ const normalizeBatchResult = (value: unknown): BatchOperationResult => {
   return {
     successCount: Number(raw.successCount ?? 0),
     failCount: Number(raw.failCount ?? 0),
+    failures: extractBatchFailures(raw),
   };
 };
 
 const buildBatchToast = (
   result: BatchOperationResult,
   successText: string,
-): Pick<ForwardBatchActionOutcome, "toastVariant" | "toastMessage"> => {
+  resultTitle: string,
+): Pick<
+  ForwardBatchActionOutcome,
+  | "toastVariant"
+  | "toastMessage"
+  | "resultTitle"
+  | "resultSummary"
+  | "failureDetails"
+> => {
   if (result.failCount === 0) {
     return {
       toastVariant: "success",
       toastMessage: successText,
+      resultTitle,
+      resultSummary: successText,
+      failureDetails: [],
     };
   }
 
   return {
     toastVariant: "error",
-    toastMessage: `成功 ${result.successCount} 项，失败 ${result.failCount} 项`,
+    toastMessage: buildBatchFailureMessage(
+      result,
+      `成功 ${result.successCount} 项，失败 ${result.failCount} 项`,
+    ),
+    resultTitle,
+    resultSummary: `成功 ${result.successCount} 项，失败 ${result.failCount} 项`,
+    failureDetails: result.failures || [],
   };
 };
 
@@ -63,7 +88,11 @@ export const executeForwardBatchDelete = async (
     const summary = normalizeBatchResult(response.data);
 
     return {
-      ...buildBatchToast(summary, `成功删除 ${summary.successCount} 项`),
+      ...buildBatchToast(
+        summary,
+        `成功删除 ${summary.successCount} 项`,
+        "批量删除结果",
+      ),
       shouldRefresh: true,
       progressPercent: 100,
       progressLabel: `删除完成：成功 ${summary.successCount} 项`,
@@ -105,6 +134,7 @@ export const executeForwardBatchToggleService = async (
         enable
           ? `成功启用 ${summary.successCount} 项`
           : `成功停用 ${summary.successCount} 项`,
+        enable ? "批量启用结果" : "批量停用结果",
       ),
       shouldRefresh: true,
       progressPercent: 100,
@@ -136,7 +166,11 @@ export const executeForwardBatchRedeploy = async (
     const summary = normalizeBatchResult(response.data);
 
     return {
-      ...buildBatchToast(summary, `成功重新下发 ${summary.successCount} 项`),
+      ...buildBatchToast(
+        summary,
+        `成功重新下发 ${summary.successCount} 项`,
+        "批量下发结果",
+      ),
       shouldRefresh: true,
       progressPercent: 100,
       progressLabel: `重新下发完成：成功 ${summary.successCount} 项`,
@@ -171,7 +205,11 @@ export const executeForwardBatchChangeTunnel = async (
     const summary = normalizeBatchResult(response.data);
 
     return {
-      ...buildBatchToast(summary, `成功换隧道 ${summary.successCount} 项`),
+      ...buildBatchToast(
+        summary,
+        `成功换隧道 ${summary.successCount} 项`,
+        "批量换隧道结果",
+      ),
       shouldRefresh: true,
       progressPercent: 100,
       progressLabel: `批量换隧道完成：成功 ${summary.successCount} 项`,

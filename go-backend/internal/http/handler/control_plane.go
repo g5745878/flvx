@@ -312,6 +312,14 @@ func (h *Handler) syncForwardServicesWithWarnings(forward *forwardRecord, method
 			return warnings, fmt.Errorf("节点 %s 下发失败: %w", node.Name, err)
 		}
 	}
+
+	// Keep paused forwards paused after UpdateService/AddService, since agent-side UpdateService
+	// always restarts services.
+	if forward.Status != 1 {
+		if err := h.controlForwardServices(forward, "PauseService", false); err != nil {
+			return warnings, err
+		}
+	}
 	return warnings, nil
 }
 
@@ -1620,6 +1628,13 @@ func processServerAddress(serverAddr string) string {
 	if strings.HasPrefix(serverAddr, "[") {
 		return serverAddr
 	}
+	// If the input is a bare IPv6 host (no port), bracket it.
+	// IPv6-with-port must be provided in bracket form: [::1]:443.
+	if looksLikeIPv6(serverAddr) {
+		if ip := net.ParseIP(serverAddr); ip != nil && ip.To4() == nil {
+			return "[" + serverAddr + "]"
+		}
+	}
 
 	if ip := net.ParseIP(serverAddr); ip != nil && ip.To4() == nil {
 		return "[" + serverAddr + "]"
@@ -1673,6 +1688,10 @@ func normalizeServerAddressInput(serverAddr string) string {
 		serverAddr = serverAddr[:idx]
 	}
 	return strings.TrimSpace(serverAddr)
+}
+
+func looksLikeIPv6(address string) bool {
+	return strings.Count(address, ":") >= 2
 }
 
 func asBool(v interface{}, def bool) bool {
